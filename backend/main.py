@@ -1,4 +1,4 @@
-import os
+import os, socketio
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,7 +30,6 @@ async def lifespan(app: FastAPI):
                 admin.roles.append(role)
             db.add(admin)
             await db.commit()
-        # 初始化站点配置
         for key, val in [("site_name","myportal-python"), ("announcement","欢迎使用")]:
             existing = await db.execute(select(SiteConfig).where(SiteConfig.key == key))
             if not existing.scalar_one_or_none():
@@ -46,7 +45,6 @@ def create_app():
 
     @app.middleware("http")
     async def rate_limit_middleware(request: Request, call_next):
-        # 跳过静态文件和 WebSocket
         if not request.url.path.startswith("/api") and not request.url.path.startswith("/ws"):
             return await call_next(request)
         rate_limiter(request)

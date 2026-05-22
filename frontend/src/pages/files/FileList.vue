@@ -1,6 +1,9 @@
 <template>
   <div>
     <h1 class="page-title">文件管理</h1>
+    <div class="upload-area">
+      <input type="file" multiple @change="handleUpload" />
+    </div>
     <div class="search-bar">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input v-model="search" placeholder="搜索文件..." @input="fetchFiles" />
@@ -30,11 +33,24 @@ async function fetchFiles() {
 }
 function formatSize(b) { if (!b) return '0 B'; const k = 1024, s = ['B','KB','MB','GB']; const i = Math.floor(Math.log(b)/Math.log(k)); return (b/Math.pow(k,i)).toFixed(1)+' '+s[i] }
 function getIcon(n) { const e = n.split('.').pop()?.toLowerCase(); const m = { pdf:'📄',doc:'📝',docx:'📝',xls:'📊',xlsx:'📊',ppt:'📽️',pptx:'📽️',jpg:'🖼️',jpeg:'🖼️',png:'🖼️',gif:'🖼️',mp4:'🎬',mp3:'🎵',zip:'📦' }; return m[e]||'📎' }
+
+async function handleUpload(e) {
+  const selectedFiles = e.target.files
+  for (let i = 0; i < selectedFiles.length; i++) {
+    const form = new FormData()
+    form.append('file', selectedFiles[i])
+    await axios.post('/api/v1/files/upload', form, { headers: { Authorization: `Bearer ${auth.token}` } })
+  }
+  fetchFiles()
+}
+
 onMounted(fetchFiles)
 </script>
 
 <style scoped>
 .page-title { font-size: 26px; font-weight: 700; margin-bottom: 24px; }
+.upload-area { margin-bottom: 20px; }
+.upload-area input { padding: 8px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); }
 .search-bar { display: flex; align-items: center; gap: 10px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0 14px; max-width: 380px; margin-bottom: 24px; }
 .search-bar input { flex: 1; padding: 12px 0; border: none; background: transparent; color: var(--text); font-size: 15px; outline: none; }
 .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
