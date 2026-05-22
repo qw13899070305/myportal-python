@@ -24,9 +24,11 @@ async def join(sid, data):
 @sio.event
 async def send_message(sid, data):
     user_id = connected_users.get(sid)
-    if not user_id: return
-    content = data.get("content","").strip()
-    if not content: return
+    if not user_id:
+        return
+    content = data.get("content", "").strip()
+    if not content:
+        return
 
     async with AsyncSessionLocal() as db:
         msg = ChatMessage(user_id=user_id, content=content)
@@ -56,7 +58,14 @@ async def send_message(sid, data):
 
         user = await db.get(User, user_id)
         username = user.username if user else "未知"
-        payload = {"id":msg.id,"user_id":user_id,"username":username,"content":content,"time":str(msg.created_at)}
+        payload = {
+            "id": msg.id,
+            "user_id": user_id,
+            "username": username,
+            "content": content,
+            "time": str(msg.created_at)
+        }
+    # 广播给所有人
     await sio.emit("chat_message", payload)
 
 @sio.event
@@ -69,7 +78,7 @@ async def revoke_message(sid, data):
             if datetime.utcnow() - msg.created_at < timedelta(minutes=settings.CHAT_RECALL_WINDOW_MINUTES):
                 msg.is_recalled = True
                 await db.commit()
-                await sio.emit("message_revoked", {"id":msg_id})
+                await sio.emit("message_revoked", {"id": msg_id})
 
 @sio.event
 async def disconnect(sid):

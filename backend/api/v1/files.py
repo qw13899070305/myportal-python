@@ -137,6 +137,27 @@ async def list_files(page: int=1, limit: int=20, sort: str="time", search: str="
     files = items.scalars().all()
     return {"total": total, "items": [{"id":f.id,"name":f.name,"size":f.size,"time":f.upload_time,"preview_url":f"/api/v1/files/preview/{f.id}","thumbnail_url":f"/api/v1/files/thumbnail/{f.id}" if f.name.split('.')[-1].lower() in ('jpg','jpeg','png','gif') else None} for f in files]}
 
+@router.delete("/{file_id}")
+async def delete_file(file_id: int, _=Depends(RoleChecker(["admin","super_admin"])), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(FileItem).where(FileItem.id == file_id, FileItem.deleted == False))
+    item = result.scalar_one_or_none()
+    if not item: raise HTTPException(404, "文件不存在")
+    item.deleted = True
+    db.add(TrashItem(file_id=item.id, name=item.name, size=item.size))
+    await db.commit()
+    return {"msg": "已移入回收站"}
+@router.put("/rename/{file_id}")
+async def rename_file(file_id: int, new_name: str = Query(...), _=Depends(RoleChecker(["admin","super_admin"])), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(FileItem).where(FileItem.id == file_id, FileItem.deleted == False))
+    item = result.scalar_one_or_none()
+    if not item: raise HTTPException(404, "文件不存在")
+    old_path = UPLOAD_DIR / item.name
+    new_path = UPLOAD_DIR / new_name
+    if new_path.exists(): raise HTTPException(400, "文件名已存在")
+    old_path.rename(new_path)
+    item.name = new_name
+    await db.commit()
+    return {"msg": "已重命名"}
 @router.get("/download-folder")
 async def download_folder(filenames: list[str] = Query(...), _=Depends(RoleChecker(["admin","super_admin"]))):
     import zipfile

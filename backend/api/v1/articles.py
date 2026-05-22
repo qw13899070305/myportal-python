@@ -75,7 +75,11 @@ async def get_article(article_id: int, user=Depends(get_current_user), db: Async
 
 @router.post("/submit")
 async def submit(data: ArticleCreate, user=Depends(RoleChecker(["author","admin","super_admin"])), db: AsyncSession = Depends(get_db)):
-    article = Article(title=sanitize_html_bleach(data.title), content=data.content, author_id=user.id, status="pending", is_internal=data.is_internal)
+    if any(r.name in ["admin","super_admin"] for r in user.roles):
+        status = "approved"
+    else:
+        status = "pending"
+    article = Article(title=sanitize_html_bleach(data.title), content=data.content, author_id=user.id, status=status, is_internal=data.is_internal)
     for tname in data.tags:
         tag_res = await db.execute(select(Tag).where(Tag.name == tname))
         tag = tag_res.scalar_one_or_none()

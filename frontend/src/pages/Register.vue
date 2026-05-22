@@ -6,27 +6,17 @@
         <h1>创建账号</h1>
         <p>加入 MyPortal 开始协作</p>
       </div>
-      <form @submit.prevent="handleRegister" class="auth-form">
-        <label>
-          <span>用户名</span>
-          <input v-model="username" type="text" placeholder="设置用户名" required />
-        </label>
-        <label>
-          <span>密码</span>
-          <input v-model="password" type="password" placeholder="设置密码" required />
-        </label>
-        <label>
-          <span>确认密码</span>
-          <input v-model="password2" type="password" placeholder="再次输入密码" required />
-        </label>
+      <form @submit.prevent="handleRegister">
+        <label class="input-group"><span>用户名</span><input v-model="username" required /></label>
+        <label class="input-group"><span>密码</span><input type="password" v-model="password" required /></label>
+        <label class="input-group"><span>确认密码</span><input type="password" v-model="password2" required /></label>
+        <p class="error-msg" v-if="errorMsg">{{ errorMsg }}</p>
         <button type="submit" :disabled="loading">
           <span v-if="!loading">注 册</span>
           <span v-else class="spinner"></span>
         </button>
       </form>
-      <p class="auth-switch">
-        已有账号？<router-link to="/login">去登录</router-link>
-      </p>
+      <p class="switch-text">已有账号？<router-link to="/login">去登录</router-link></p>
     </div>
   </div>
 </template>
@@ -39,16 +29,14 @@ import axios from 'axios'
 const username = ref('')
 const password = ref('')
 const password2 = ref('')
+const errorMsg = ref('')
 const loading = ref(false)
 const router = useRouter()
 
 async function handleRegister() {
+  errorMsg.value = ''
   if (password.value !== password2.value) {
-    alert('两次输入的密码不一致')
-    return
-  }
-  if (password.value.length < 3) {
-    alert('密码至少需要3个字符')
+    errorMsg.value = '两次密码不一致'
     return
   }
   loading.value = true
@@ -58,10 +46,10 @@ async function handleRegister() {
       password: password.value,
       requested_role: 'reader'
     })
-    alert('注册成功！请登录')
+    alert('注册成功，请登录')
     router.push('/login')
   } catch (e) {
-    alert('注册失败：' + (e.response?.data?.detail || '网络错误'))
+    errorMsg.value = e.response?.data?.detail || '注册失败'
   } finally {
     loading.value = false
   }
@@ -69,115 +57,22 @@ async function handleRegister() {
 </script>
 
 <style scoped>
-.auth-page {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #f0f4ff 0%, #e8ecff 40%, #f5f3ff 100%);
-  padding: 24px;
-}
-.auth-card {
-  background: var(--bg-secondary);
-  border-radius: var(--radius-xl);
-  padding: 48px 40px;
-  width: 420px;
-  max-width: 100%;
-  box-shadow: 0 25px 50px -12px rgba(0,0,0,0.15);
-  border: 1px solid var(--border);
-}
-.auth-header {
-  text-align: center;
-  margin-bottom: 32px;
-}
-.auth-logo {
-  font-size: 44px;
-  color: var(--primary);
-  display: block;
-  margin-bottom: 12px;
-}
-.auth-header h1 {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-  margin-bottom: 6px;
-}
-.auth-header p {
-  color: var(--text-secondary);
-  font-size: 15px;
-}
-.auth-form {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-.auth-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.auth-form label span {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-.auth-form input {
-  padding: 12px 16px;
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--text);
-  font-size: 15px;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  outline: none;
-}
-.auth-form input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
-}
-.auth-form button {
-  width: 100%;
-  padding: 14px;
-  background: var(--primary);
-  color: white;
-  border-radius: var(--radius-sm);
-  font-size: 16px;
-  font-weight: 600;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 8px;
-}
-.auth-form button:hover:not(:disabled) {
-  background: var(--primary-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 10px 20px -10px var(--primary);
-}
-.auth-form button:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-.spinner {
-  width: 22px; height: 22px;
-  border: 2px solid transparent;
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
+.auth-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #f0f4ff 0%, #e8ecff 40%, #f5f3ff 100%); padding: 24px; }
+.auth-card { background: var(--bg-secondary); border-radius: var(--radius-xl); padding: 48px 40px; width: 420px; max-width: 100%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.15); border: 1px solid var(--border); }
+.auth-header { text-align: center; margin-bottom: 32px; }
+.auth-logo { font-size: 44px; color: var(--primary); }
+h1 { font-size: 28px; font-weight: 700; margin: 12px 0 6px; }
+.auth-header p { color: var(--text-secondary); }
+.input-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.input-group span { font-weight: 600; font-size: 14px; }
+input { padding: 12px 16px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); font-size: 15px; }
+input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+.error-msg { color: var(--danger); font-size: 14px; margin-bottom: 8px; }
+button { width: 100%; padding: 14px; background: var(--primary); color: white; border-radius: var(--radius-sm); font-size: 16px; font-weight: 600; border: none; cursor: pointer; }
+button:hover:not(:disabled) { background: var(--primary-hover); }
+button:disabled { opacity: 0.7; cursor: not-allowed; }
+.spinner { width: 22px; height: 22px; border: 2px solid transparent; border-top-color: white; border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.auth-switch {
-  margin-top: 24px;
-  text-align: center;
-  color: var(--text-secondary);
-  font-size: 14px;
-}
-.auth-switch a {
-  color: var(--primary);
-  font-weight: 600;
-  text-decoration: none;
-}
-.auth-switch a:hover {
-  text-decoration: underline;
-}
+.switch-text { margin-top: 20px; text-align: center; }
+.switch-text a { color: var(--primary); font-weight: 600; }
 </style>

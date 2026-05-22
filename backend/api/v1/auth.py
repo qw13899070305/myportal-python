@@ -43,6 +43,13 @@ async def switch_role(role_name: str, user: User = Depends(get_current_user)):
     token = create_access_token({"sub": str(user.id), "roles": roles})
     return {"access_token": token, "roles": roles}
 
+@router.post("/change-password")
+async def change_password(old_password: str, new_password: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if not user.verify_password(old_password):
+        raise HTTPException(403, "当前密码错误")
+    user.set_password(new_password)
+    await db.commit()
+    return {"msg": "密码已修改"}
 @router.post("/avatar")
 async def upload_avatar(file: UploadFile = File(...), user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     # 校验图片类型
