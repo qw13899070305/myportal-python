@@ -1,36 +1,32 @@
-from __future__ import annotations
-from datetime import datetime
-from sqlalchemy import String, Boolean, DateTime, Table, Column, ForeignKey, Integer
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from backend.core.database import Base
+from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy.orm import relationship
 from argon2 import PasswordHasher
+from backend.core.database import Base
+import datetime
 
-ph = PasswordHasher()
-
-user_roles = Table("user_roles", Base.metadata,
-    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-    Column("role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
-)
-
-class Role(Base):
-    __tablename__ = "roles"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(50), unique=True, index=True)
-    users: Mapped[list[User]] = relationship(secondary=user_roles, back_populates="roles")
+# ✅ 显式设置 argon2 参数
+ph = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4)
 
 class User(Base):
     __tablename__ = "users"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
-    hashed_password: Mapped[str] = mapped_column(String(255))
-    avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    roles: Mapped[list[Role]] = relationship(secondary=user_roles, back_populates="users", lazy="selectin")
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, nullable=False)
+    email = Column(String(100))
+    hashed_password = Column(String(255), nullable=False)
+    avatar = Column(String(255))
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    def set_password(self, password: str): self.hashed_password = ph.hash(password)
+    roles = relationship("Role", secondary="user_roles", back_populates="users")
+
+    def set_password(self, password: str):
+        self.hashed_password = ph.hash(password)
+
     def verify_password(self, password: str) -> bool:
-        try: return ph.verify(self.hashed_password, password)
-        except: return False
+        try:
+            return ph.verify(self.hashed_password, password)
+        except:
+            return False
+
     def has_role(self, role_name: str) -> bool:
         return any(role.name == role_name for role in self.roles)

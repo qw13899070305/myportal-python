@@ -16,7 +16,14 @@ service.interceptors.request.use(config => {
 service.interceptors.response.use(
   res => res.data,
   error => {
-    const msg = error.response?.data?.detail || error.message || '请求失败'
+    let msg = '请求失败'
+    if (error.response?.data?.detail) {
+      msg = error.response.data.detail
+    } else if (error.code === 'ECONNABORTED') {
+      msg = '请求超时，请重试'
+    } else if (!error.response) {
+      msg = '网络连接失败，请检查网络'
+    }
     ElMessage.error(msg)
     if (error.response?.status === 401) {
       const auth = useAuthStore()

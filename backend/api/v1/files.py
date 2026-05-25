@@ -1,4 +1,4 @@
-import os, mimetypes, io, re, uuid, struct
+import os, uuid, mimetypes
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse
@@ -7,6 +7,7 @@ from sqlalchemy import select
 from backend.core.database import get_db
 from backend.core.auth import get_current_user, RoleChecker
 from backend.core.config import settings
+from backend.core.utils import sanitize_filename
 from backend.models.file import FileItem
 
 router = APIRouter(prefix="/files", tags=["文件"])
@@ -49,10 +50,9 @@ def safe_filename(filename: str) -> str:
     return uuid.uuid4().hex + os.path.splitext(os.path.basename(filename))[1]
 
 @router.post("/upload")
-async def upload(file: UploadFile = File(...),
+async def upload(file: UploadFile = File(..., max_size=50*1024*1024),  # ✅ 限制文件大小50MB
                  user=Depends(RoleChecker(["author","admin","super_admin"])),
                  db: AsyncSession = Depends(get_db)):
-    # 魔数校验
     head = await file.read(32)
     await file.seek(0)
     if not check_magic(head, file.content_type):
@@ -67,7 +67,7 @@ async def upload(file: UploadFile = File(...),
     return {"id": item.id, "filename": file_path.name}
 
 @router.post("/upload-avatar")
-async def upload_avatar(file: UploadFile = File(...),
+async def upload_avatar(file: UploadFile = File(..., max_size=2*1024*1024),  # ✅ 限制头像大小2MB
                         user=Depends(get_current_user),
                         db: AsyncSession = Depends(get_db)):
     if file.content_type not in ["image/png", "image/jpeg", "image/gif"]:

@@ -34,7 +34,11 @@ def create_app():
         docs_url="/docs" if settings.DEBUG else None
     )
 
+    # ✅ 修复 CORS 通配符+凭据冲突
     allow_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    if "*" in allow_origins and os.getenv("ALLOW_CREDENTIALS", "true").lower() == "true":
+        raise ValueError("❌ CORS 不允许在 allow_credentials=True 时使用通配符 *")
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allow_origins,
@@ -50,10 +54,10 @@ def create_app():
             rate_limiter(request)
         return await call_next(request)
 
-    # 全局异常处理
+    # ✅ 全局异常处理增加日志（后续可接入 logging）
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
-        print(f"❌ 未捕获异常: {exc}")
+        print(f"❌ 未捕获异常 [{request.method} {request.url.path}]: {exc}")
         return JSONResponse(status_code=500, content={"detail": "服务器内部错误"})
 
     app.include_router(api_router, prefix="/api/v1")
