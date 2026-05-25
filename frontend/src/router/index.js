@@ -7,13 +7,13 @@ const routes = [
   {
     path: '/', component: () => import('../layouts/MainLayout.vue'),
     children: [
-      { path: '',                component: () => import('../pages/Dashboard.vue') },
+      { path: '',                component: () => import('../pages/Dashboard.vue'),       meta: { requiresAuth: false } },
       { path: 'profile',         component: () => import('../pages/profile/Profile.vue') },
       { path: 'files',           component: () => import('../pages/files/FileList.vue') },
       { path: 'files/:id',       component: () => import('../pages/files/FilePreview.vue'), props: true },
-      { path: 'articles',        component: () => import('../pages/articles/ArticleList.vue') },
+      { path: 'articles',        component: () => import('../pages/articles/ArticleList.vue'),    meta: { requiresAuth: false } },
       { path: 'articles/new',    component: () => import('../pages/articles/ArticleEditor.vue') },
-      { path: 'articles/:id',    component: () => import('../pages/articles/ArticleDetail.vue'), props: true },
+      { path: 'articles/:id',    component: () => import('../pages/articles/ArticleDetail.vue'), props: true, meta: { requiresAuth: false } },
       { path: 'chat',            component: () => import('../pages/chat/Chat.vue') },
       {
         path: 'admin', component: () => import('../layouts/AdminLayout.vue'), meta: { requiresAdmin: true },
@@ -36,6 +36,9 @@ const router = createRouter({ history: createWebHistory(), routes })
 router.beforeEach(async (to, from, next) => {
   const auth = useAuthStore()
   if (to.path === '/register' || to.path === '/login') {
+    return next()
+  }
+  if (to.meta.requiresAuth === false) {
     return next()
   }
   if (!auth.isAuthenticated) {

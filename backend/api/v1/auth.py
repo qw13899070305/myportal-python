@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Response, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
@@ -41,7 +42,7 @@ async def logout(request: Request, response: Response):
             jti = payload.get("jti")
             exp = payload.get("exp")
             if jti and exp:
-                ttl = max(0, int(exp - __import__('datetime').datetime.utcnow().timestamp()))
+                ttl = max(0, int(exp - datetime.now(timezone.utc).timestamp()))
                 await add_token_to_blacklist(jti, ttl)
         except Exception:
             pass

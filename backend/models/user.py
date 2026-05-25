@@ -2,9 +2,14 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, T
 from sqlalchemy.orm import relationship
 from argon2 import PasswordHasher
 from backend.core.database import Base
+from backend.core.config import settings
 import datetime
 
-ph = PasswordHasher(time_cost=4, memory_cost=131072, parallelism=4)
+ph = PasswordHasher(
+    time_cost=settings.ARGON2_TIME_COST,
+    memory_cost=settings.ARGON2_MEMORY_COST,
+    parallelism=settings.ARGON2_PARALLELISM,
+)
 
 user_roles = Table(
     'user_roles', Base.metadata,

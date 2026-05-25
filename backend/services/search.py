@@ -4,9 +4,16 @@ from fastapi import HTTPException
 import logging
 
 logger = logging.getLogger("myportal.search")
+_client = None
 
 async def get_search_client() -> AsyncClient:
-    return AsyncClient(url=settings.MEILISEARCH_URL, api_key=settings.MEILISEARCH_API_KEY)
+    global _client
+    if _client is None:
+        _client = AsyncClient(
+            url=settings.MEILISEARCH_URL,
+            api_key=settings.MEILISEARCH_API_KEY
+        )
+    return _client
 
 async def index_article(article_id: int, title: str, content: str, author: str, tags: list[str]):
     try:

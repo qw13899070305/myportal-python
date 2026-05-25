@@ -25,3 +25,11 @@ if not settings.SECRET_KEY or len(settings.SECRET_KEY) < 32:
     raise ValueError("❌ 必须在 .env 中设置长度 ≥32 的 SECRET_KEY")
 
 CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+
+# Argon2 可调参数
+ARGON2_TIME_COST: int = int(os.getenv("ARGON2_TIME_COST", "4"))
+ARGON2_MEMORY_COST: int = int(os.getenv("ARGON2_MEMORY_COST", "131072"))
+ARGON2_PARALLELISM: int = int(os.getenv("ARGON2_PARALLELISM", "4"))
+
+# JWT 算法（生产环境可改为 RS256）
+JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")

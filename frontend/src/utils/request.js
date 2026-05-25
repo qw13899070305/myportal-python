@@ -6,6 +6,15 @@ const service = axios.create({
   withCredentials: true
 })
 
+// 请求拦截器：自动附加 CSRF Token
+service.interceptors.request.use(config => {
+  const csrfToken = localStorage.getItem('csrf_token')
+  if (csrfToken && ['post', 'put', 'delete', 'patch'].includes(config.method)) {
+    config.headers['X-CSRF-Token'] = csrfToken
+  }
+  return config
+})
+
 service.interceptors.response.use(
   res => res.data,
   error => {
@@ -27,14 +36,7 @@ service.interceptors.response.use(
 
 export default service
 
-// 获取 CSRF Token 并附加到请求头
 export async function getCsrfToken() {
-  const res = await axios.get('/auth/csrf-token')
-  return res.data.csrf_token
-}
-
-// 获取 CSRF Token 并附加到请求头
-export async function getCsrfToken() {
-  const res = await axios.get('/auth/csrf-token')
+  const res = await axios.get('/api/v1/auth/csrf-token')
   return res.data.csrf_token
 }
