@@ -1,0 +1,5 @@
+{
+  "common": { "login": "登录", "logout": "退出", "register": "注册", "save": "保存", "cancel": "取消", "delete": "删除", "search": "搜索", "loading": "加载中...", "noData": "暂无数据" },
+  "nav": { "dashboard": "仪表盘", "articles": "文章", "files": "文件", "chat": "聊天", "admin": "管理后台", "profile": "个人中心" },
+  "auth": { "username": "用户名", "password": "密码", "email": "邮箱", "loginSuccess": "登录成功", "loginFailed": "用户名或密码错误" }
+}

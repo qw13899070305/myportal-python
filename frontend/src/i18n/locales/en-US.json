@@ -1,0 +1,5 @@
+{
+  "common": { "login": "Login", "logout": "Logout", "register": "Register", "save": "Save", "cancel": "Cancel", "delete": "Delete", "search": "Search", "loading": "Loading...", "noData": "No Data" },
+  "nav": { "dashboard": "Dashboard", "articles": "Articles", "files": "Files", "chat": "Chat", "admin": "Admin", "profile": "Profile" },
+  "auth": { "username": "Username", "password": "Password", "email": "Email", "loginSuccess": "Login Successful", "loginFailed": "Invalid username or password" }
+}

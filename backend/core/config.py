@@ -6,26 +6,22 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "myportal-python"
     VERSION: str = "0.1.0"
     DEBUG: bool = False
-
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data.db")
-
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
+    MEILISEARCH_URL: str = os.getenv("MEILISEARCH_URL", "http://localhost:7700")
+    MEILISEARCH_API_KEY: str = os.getenv("MEILISEARCH_API_KEY", "")
     UPLOAD_DIR: Path = Path(os.getenv("UPLOAD_DIR", "./uploads"))
     PREVIEW_TEMP_DIR: Path = Path(os.getenv("PREVIEW_TEMP_DIR", "./preview_temp"))
-
     CHAT_MAX_MESSAGES: int = 500
     CHAT_RECALL_WINDOW_MINUTES: int = 2
-
     class Config:
         env_file = ".env"
 
 settings = Settings()
-
 if not settings.SECRET_KEY or len(settings.SECRET_KEY) < 32:
     raise ValueError("❌ 必须在 .env 中设置长度 ≥32 的 SECRET_KEY")
 
-# 跨域允许的来源（逗号分隔）
 CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")

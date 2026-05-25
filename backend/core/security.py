@@ -1,31 +1,47 @@
 from fastapi import Request, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from jose import jwt, JWTError
+import jwt
+from jwt import PyJWTError
 from datetime import datetime, timedelta
 from backend.core.config import settings
 from backend.core.database import get_db
+from backend.core.redis import get_redis
 from backend.models.user import User
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "jti": f"{data.get('user_id')}_{datetime.utcnow().timestamp()}"})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
 
 def verify_token(token: str) -> dict:
     try:
-        return jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
-    except JWTError:
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"], options={"verify_exp": True})
+    except PyJWTError:
         raise HTTPException(status_code=401, detail="令牌无效或已过期")
 
-async def get_current_user(
-    request: Request,
-    db: AsyncSession = Depends(get_db)
-) -> User:
+async def is_token_blacklisted(jti: str) -> bool:
+    try:
+        redis = await get_redis()
+        return await redis.exists(f"blacklist:{jti}")
+    except Exception:
+        return False
+
+async def add_token_to_blacklist(jti: str, expire_seconds: int):
+    try:
+        redis = await get_redis()
+        await redis.setex(f"blacklist:{jti}", expire_seconds, "1")
+    except Exception:
+        pass
+
+async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
     token = request.cookies.get("access_token")
     if not token:
         raise HTTPException(status_code=401, detail="未登录")
     payload = verify_token(token)
+    jti = payload.get("jti")
+    if jti and await is_token_blacklisted(jti):
+        raise HTTPException(status_code=401, detail="令牌已失效")
     username = payload.get("sub")
     if not username:
         raise HTTPException(status_code=401, detail="令牌无效")
@@ -34,3 +50,11 @@ async def get_current_user(
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="用户不存在或已禁用")
     return user
+
+class RoleChecker:
+    def __init__(self, allowed_roles: list[str]):
+        self.allowed_roles = allowed_roles
+    async def __call__(self, current_user: User = Depends(get_current_user)):
+        if not any(role.name in self.allowed_roles for role in current_user.roles):
+            raise HTTPException(status_code=403, detail="Operation not permitted")
+        return current_user
