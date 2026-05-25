@@ -1,7 +1,6 @@
 import re
 import jwt
 from core.config import SECRET_KEY, JWT_ALGORITHM
-from datetime import datetime, timedelta
 import socketio
 import jwt
 from core.config import SECRET_KEY, JWT_ALGORITHM
@@ -30,7 +29,8 @@ async def connect(sid, environ):
 
 @sio.event
 async def join(sid, data):
-    user_id = data.get("user_id")
+        session = await sio.get_session(sid)
+        user_id = session.get("user_id") if session else None
     if user_id:
         connected_users[sid] = user_id
         await sio.emit("user_joined", {"user_id": user_id}, skip_sid=sid)
