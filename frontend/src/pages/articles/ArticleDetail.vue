@@ -43,6 +43,7 @@
 
 <script setup>
 import DOMPurify from "dompurify";
+import DOMPurify from "dompurify";
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
