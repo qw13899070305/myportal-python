@@ -25,7 +25,7 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     avatar = Column(String(255))
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.datetime.now(datetime.timezone.utc))
     roles = relationship("Role", secondary=user_roles, back_populates="users")
 
     def set_password(self, password: str):

@@ -13,7 +13,7 @@ const routes = [
       { path: 'files/:id',       component: () => import('../pages/files/FilePreview.vue'), props: true },
       { path: 'articles',        component: () => import('../pages/articles/ArticleList.vue'),    meta: { requiresAuth: false } },
       { path: 'articles/new',    component: () => import('../pages/articles/ArticleEditor.vue') },
-      { path: 'articles/:id',    component: () => import('../pages/articles/ArticleDetail.vue'), props: true, meta: { requiresAuth: false } },
+      { path: 'articles/:id',    component: () => import('../pages/articles/ArticleDetail.vue'), props: true },
       { path: 'chat',            component: () => import('../pages/chat/Chat.vue') },
       {
         path: 'admin', component: () => import('../layouts/AdminLayout.vue'), meta: { requiresAdmin: true },

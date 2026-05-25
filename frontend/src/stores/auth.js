@@ -13,6 +13,7 @@ export const useAuthStore = defineStore('auth', {
     async login(username, password) {
       await request.post('/auth/login', { username, password })
       await this.fetchUser()
+    try { const csrfRes = await request.get("/auth/csrf-token"); localStorage.setItem("csrf_token", csrfRes.csrf_token); } catch(e) {}
     },
     async fetchUser() {
       try {

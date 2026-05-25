@@ -54,7 +54,7 @@ SECURITY_HEADERS = {
     "X-XSS-Protection": "1; mode=block",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Content-Security-Policy": (
-        "default-src 'self'; script-src 'self'; style-src 'self'; "
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: blob:; font-src 'self'; connect-src 'self' ws: wss:"
     ),
 }

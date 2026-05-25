@@ -31,7 +31,7 @@ async def login(request: Request, response: Response, login_data: UserLogin, db:
         raise HTTPException(401, "用户名或密码错误")
     token = create_access_token(data={"sub": user.username, "user_id": user.id})
     set_token_cookie(response, token)
-    return {"message": "登录成功", "user": UserOut.from_orm(user)}
+    return {"message": "登录成功", "user": UserOut.model_validate(user)}
 
 @router.post("/logout")
 async def logout(request: Request, response: Response):
@@ -63,7 +63,7 @@ async def switch_role(request: Request, response: Response, role_name: str, curr
         raise HTTPException(400, "角色切换失败")
     token = create_access_token(data={"sub": user.username, "user_id": user.id})
     set_token_cookie(response, token)
-    return {"message": f"已切换为 {role_name}", "user": UserOut.from_orm(user)}
+    return {"message": f"已切换为 {role_name}", "user": UserOut.model_validate(user)}
 
 @router.get("/csrf-token")
 async def get_csrf_token(csrf_protect: CsrfProtect = Depends()):
