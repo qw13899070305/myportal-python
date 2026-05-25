@@ -3,15 +3,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import jwt
 from jwt import PyJWTError
 from datetime import datetime, timedelta
+import uuid
+import logging
+
 from backend.core.config import settings
 from backend.core.database import get_db
 from backend.core.redis import get_redis
 from backend.models.user import User
 
+logger = logging.getLogger("myportal.security")
+
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire, "jti": f"{data.get('user_id')}_{datetime.utcnow().timestamp()}"})
+    to_encode.update({"exp": expire, "jti": str(uuid.uuid4())})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
 
 def verify_token(token: str) -> dict:
@@ -23,16 +28,24 @@ def verify_token(token: str) -> dict:
 async def is_token_blacklisted(jti: str) -> bool:
     try:
         redis = await get_redis()
-        return await redis.exists(f"blacklist:{jti}")
-    except Exception:
+        if redis:
+            return await redis.exists(f"blacklist:{jti}")
+        else:
+            logger.error("Redis 不可用，无法查询 token 黑名单")
+            return False
+    except Exception as e:
+        logger.error(f"查询 token 黑名单失败: {e}")
         return False
 
 async def add_token_to_blacklist(jti: str, expire_seconds: int):
     try:
         redis = await get_redis()
-        await redis.setex(f"blacklist:{jti}", expire_seconds, "1")
-    except Exception:
-        pass
+        if redis:
+            await redis.setex(f"blacklist:{jti}", expire_seconds, "1")
+        else:
+            logger.error("Redis 不可用，无法将 token 加入黑名单")
+    except Exception as e:
+        logger.error(f"Token 黑名单写入失败: {e}")
 
 async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
     token = request.cookies.get("access_token")
