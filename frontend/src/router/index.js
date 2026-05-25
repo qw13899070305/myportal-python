@@ -35,21 +35,18 @@ const router = createRouter({ history: createWebHistory(), routes })
 
 router.beforeEach(async (to, from, next) => {
     const auth = useAuthStore()
-
     if (to.path === '/register' || to.path === '/login') {
         next(); return;
     }
-
-    // ✅ 只尝试一次恢复会话
+    // ✅ 只调用一次 fetchUser
     if (auth.token && (!auth.user || !auth.user.roles)) {
         try {
             await auth.fetchUser();
             next(); return;
         } catch {
-            auth.logout();
+            auth.logout()
         }
     }
-
     if (to.path !== '/login' && !auth.token) {
         next('/login')
     } else if (to.meta.requiresAdmin && !auth.isAdmin()) {

@@ -1,5 +1,5 @@
-import re
-from datetime import datetime, timedelta
+import re, bleach
+from datetime import datetime, timedelta, timezone
 import jwt
 import socketio
 from backend.core.config import settings
@@ -39,6 +39,8 @@ async def send_message(sid, data):
     content = data.get("content", "").strip()
     if not content:
         return
+    # ✅ 过滤 XSS
+    content = bleach.clean(content, tags=[], strip=True)
     async with AsyncSessionLocal() as db:
         msg = ChatMessage(user_id=user_id, content=content)
         db.add(msg)
@@ -79,7 +81,7 @@ async def revoke_message(sid, data):
     async with AsyncSessionLocal() as db:
         msg = await db.get(ChatMessage, msg_id)
         if msg and msg.user_id == user_id:
-            if datetime.utcnow() - msg.created_at < timedelta(minutes=settings.CHAT_RECALL_WINDOW_MINUTES):
+            if datetime.now(timezone.utc) - msg.created_at.replace(tzinfo=timezone.utc) < timedelta(minutes=settings.CHAT_RECALL_WINDOW_MINUTES):
                 msg.is_recalled = True
                 await db.commit()
                 await sio.emit("message_revoked", {"id": msg_id})
