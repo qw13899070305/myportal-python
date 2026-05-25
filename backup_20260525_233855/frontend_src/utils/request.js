@@ -17,6 +17,7 @@ service.interceptors.response.use(
     } else if (!error.response) {
       msg = '网络连接失败，请检查网络'
     }
+    // 项目若使用 Element Plus，请改为 ElMessage.error(msg)
     alert(msg)
     if (error.response?.status === 401) {
       window.location.href = '/login'

@@ -1,21 +1,36 @@
-import time
-from collections import defaultdict
-from fastapi import Request, HTTPException
-from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi import Request, HTTPException, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from jose import jwt, JWTError
+from datetime import datetime, timedelta
+from backend.core.config import settings
+from backend.core.database import get_db
+from backend.models.user import User
 
-login_attempts = defaultdict(list)
-MAX_ATTEMPTS = 5
-BLOCK_TIME = 300
+def create_access_token(data: dict) -> str:
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
 
-class SecurityMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        if request.url.path == "/api/v1/auth/login" and request.method == "POST":
-            ip = request.client.host
-            now = time.time()
-            login_attempts[ip] = [t for t in login_attempts[ip] if now - t < BLOCK_TIME]
-            if len(login_attempts[ip]) >= MAX_ATTEMPTS:
-                raise HTTPException(429, detail="登录过于频繁，请5分钟后再试")
-        response = await call_next(request)
-        if response.status_code == 401 and request.url.path == "/api/v1/auth/login":
-            login_attempts[request.client.host].append(time.time())
-        return response
+def verify_token(token: str) -> dict:
+    try:
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="令牌无效或已过期")
+
+async def get_current_user(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+) -> User:
+    token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="未登录")
+    payload = verify_token(token)
+    username = payload.get("sub")
+    if not username:
+        raise HTTPException(status_code=401, detail="令牌无效")
+    from backend.services.user_service import get_user_by_username
+    user = await get_user_by_username(db, username)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="用户不存在或已禁用")
+    return user

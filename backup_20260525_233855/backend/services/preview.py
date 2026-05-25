@@ -1,9 +1,10 @@
-import os
+import os, io, base64
 from pathlib import Path
 from fastapi import HTTPException
 from backend.core.config import settings
 
 def get_file_path(filename: str) -> Path:
+    # ✅ 防御路径穿越
     safe_name = os.path.basename(filename)
     fp = (settings.UPLOAD_DIR / safe_name).resolve()
     if not str(fp).startswith(str(settings.UPLOAD_DIR.resolve())):

@@ -1,71 +1,61 @@
-import os, socketio
 from fastapi import FastAPI, Request
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from contextlib import asynccontextmanager
-from sqlalchemy import select
+from starlette.middleware.base import BaseHTTPMiddleware
+import logging
+import sys
+
 from backend.core.config import settings
-from backend.core.database import engine, Base, AsyncSessionLocal
-from backend.core.security import SecurityMiddleware
-from backend.core.rate_limit import RateLimiter
 from backend.api.v1 import api_router
-from backend.socketio import socket_app
-from backend.models.config import SiteConfig
+from backend.core.database import engine, Base
 
-rate_limiter = RateLimiter(requests=120, window=60)
+logging.basicConfig(
+    level=logging.INFO if not settings.DEBUG else logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("myportal")
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    async with AsyncSessionLocal() as db:
-        for key, val in [("site_name","myportal-python"), ("announcement","欢迎使用")]:
-            existing = await db.execute(select(SiteConfig).where(SiteConfig.key == key))
-            if not existing.scalar_one_or_none():
-                db.add(SiteConfig(key=key, value=val))
-        await db.commit()
-    yield
+app = FastAPI(
+    title="MyPortal",
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url=None
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if not settings.DEBUG:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws: wss:"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"请求 {request.method} {request.url.path} 出错: {exc}", exc_info=True)
+    return JSONResponse(status_code=500, content={"detail": "服务器内部错误，请稍后重试"})
+
+app.include_router(api_router, prefix="/api/v1")
+
+@app.on_event("startup")
+async def startup():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+@app.on_event("shutdown")
+async def shutdown():
     await engine.dispose()
-
-def create_app():
-    app = FastAPI(
-        title=settings.PROJECT_NAME,
-        version=settings.VERSION,
-        lifespan=lifespan,
-        docs_url="/docs" if settings.DEBUG else None
-    )
-
-    # ✅ 修复 CORS 通配符+凭据冲突
-    allow_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
-    if "*" in allow_origins and os.getenv("ALLOW_CREDENTIALS", "true").lower() == "true":
-        raise ValueError("❌ CORS 不允许在 allow_credentials=True 时使用通配符 *")
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allow_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-    app.add_middleware(SecurityMiddleware)
-
-    @app.middleware("http")
-    async def rate_limit_middleware(request: Request, call_next):
-        if request.url.path.startswith("/api") or request.url.path.startswith("/ws"):
-            rate_limiter(request)
-        return await call_next(request)
-
-    # ✅ 全局异常处理增加日志（后续可接入 logging）
-    @app.exception_handler(Exception)
-    async def global_exception_handler(request: Request, exc: Exception):
-        print(f"❌ 未捕获异常 [{request.method} {request.url.path}]: {exc}")
-        return JSONResponse(status_code=500, content={"detail": "服务器内部错误"})
-
-    app.include_router(api_router, prefix="/api/v1")
-    app.mount("/ws", socket_app)
-
-    static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
-    if os.path.isdir(static_dir):
-        app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
-    return app
-
-app = create_app()

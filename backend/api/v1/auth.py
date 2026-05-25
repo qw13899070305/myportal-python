@@ -1,119 +1,58 @@
-import os, uuid, bleach
-from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Response, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from backend.core.database import get_db
-from backend.core.auth import create_access_token, get_current_user, RoleChecker
 from backend.core.config import settings
-from backend.core.security import check_login_throttle, record_failed_login
-from backend.core.utils import sanitize_filename
+from backend.core.database import get_db
+from backend.core.security import create_access_token, get_current_user
 from backend.models.user import User
-from backend.models.chat import Notification
-from pydantic import BaseModel, EmailStr, field_validator
+from backend.schemas.user import UserOut, UserCreate, UserLogin
+from backend.services.user_service import create_user, authenticate_user
 
 router = APIRouter(prefix="/auth", tags=["认证"])
 
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-class RegisterRequest(BaseModel):
-    username: str
-    password: str
-    confirm_password: str
-    email: EmailStr
-
-    @field_validator("username")
-    def username_alphanumeric(cls, v):
-        if not v.isalnum():
-            raise ValueError("用户名只能包含字母和数字")
-        return v
-
-    @field_validator("password")
-    def password_strength(cls, v):
-        # ✅ 新增密码强度验证
-        if len(v) < 8:
-            raise ValueError("密码长度至少8位")
-        if not any(c.islower() for c in v):
-            raise ValueError("密码需包含小写字母")
-        if not any(c.isupper() for c in v):
-            raise ValueError("密码需包含大写字母")
-        if not any(c.isdigit() for c in v):
-            raise ValueError("密码需包含数字")
-        return v
-
-    @field_validator("confirm_password")
-    def passwords_match(cls, v, info):
-        if 'password' in info.data and v != info.data['password']:
-            raise ValueError("两次密码不一致")
-        return v
-
-@router.post("/register")
-async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(select(User).where(User.username == req.username))
-    if existing.scalar_one_or_none():
-        raise HTTPException(409, "用户名已存在")
-    user = User(username=req.username, email=req.email)
-    user.set_password(req.password)
-    db.add(user)
-    await db.commit()
-    return {"message": "注册成功"}
-
-@router.post("/login")
-async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
-    # ✅ 登录限流（内存版，生产环境请用 Redis）
-    check_login_throttle(req.username)
-    result = await db.execute(select(User).where(User.username == req.username))
-    user = result.scalar_one_or_none()
-    if not user or not user.verify_password(req.password):
-        record_failed_login(req.username)
-        raise HTTPException(401, "用户名或密码错误")
-    roles = [role.name for role in user.roles]
-    token = create_access_token({"sub": str(user.id), "roles": roles})
-
-    # ✅ 改为 HttpOnly Cookie 方式，同时保留响应体中的 token 以兼容旧版
-    response = JSONResponse({"access_token": token, "token_type": "bearer", "roles": roles, "user_id": user.id})
+def set_token_cookie(response: Response, token: str):
     response.set_cookie(
         key="access_token",
         value=token,
         httponly=True,
-        secure=False if settings.DEBUG else True,
+        secure=not settings.DEBUG,
         samesite="lax",
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        max_age=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60),
+        path="/"
     )
-    return response
+
+@router.post("/register", response_model=UserOut)
+async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
+    return await create_user(db, user_in)
+
+@router.post("/login")
+async def login(response: Response, login_data: UserLogin, db: AsyncSession = Depends(get_db)):
+    user = await authenticate_user(db, login_data.username, login_data.password)
+    if not user:
+        raise HTTPException(401, "用户名或密码错误")
+    token = create_access_token(data={"sub": user.username, "user_id": user.id})
+    set_token_cookie(response, token)
+    return {"message": "登录成功", "user": UserOut.from_orm(user)}
+
+@router.post("/logout")
+async def logout(response: Response):
+    response.delete_cookie("access_token", path="/")
+    return {"message": "已登出"}
+
+@router.get("/me", response_model=UserOut)
+async def get_me(current_user: User = Depends(get_current_user)):
+    return current_user
 
 @router.post("/switch-role")
-async def switch_role(role_name: str, user: User = Depends(get_current_user)):
-    if not user.has_role(role_name):
-        raise HTTPException(403, "你没有该角色")
-    # ✅ 修复：新 token 只包含切换后的单一角色
-    token = create_access_token({"sub": str(user.id), "roles": [role_name]})
-    return {"access_token": token, "token_type": "bearer", "roles": [role_name]}
-
-@router.post("/avatar")
-async def upload_avatar(file: UploadFile = File(..., max_size=2*1024*1024),  # ✅ 限制头像大小为2MB
-                        user: User = Depends(get_current_user),
-                        db: AsyncSession = Depends(get_db)):
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(400, "仅支持图片格式")
-    safe_name = f"avatar_{user.id}_{uuid.uuid4().hex}{os.path.splitext(sanitize_filename(file.filename))[1]}"
-    file_path = settings.UPLOAD_DIR / "avatars" / safe_name
-    settings.UPLOAD_DIR.mkdir(exist_ok=True)
-    (settings.UPLOAD_DIR / "avatars").mkdir(exist_ok=True)
-    content = await file.read()
-    file_path.write_bytes(content)
-    user.avatar = safe_name
-    db.add(user)
-    await db.commit()
-    return {"avatar": safe_name, "url": f"/api/v1/files/avatar/{safe_name}"}
-
-@router.get("/notifications")
-async def get_notifications(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(Notification).where(Notification.user_id == user.id).order_by(Notification.created_at.desc()).limit(20)
-    )
-    notifs = result.scalars().all()
-    return [{"id": n.id, "type": n.type, "content": n.content, "is_read": n.is_read, "time": str(n.created_at)} for n in notifs]
+async def switch_role(
+    response: Response,
+    role_name: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    from backend.services.user_service import switch_user_role
+    user = await switch_user_role(db, current_user, role_name)
+    if not user:
+        raise HTTPException(400, "角色切换失败")
+    token = create_access_token(data={"sub": user.username, "user_id": user.id})
+    set_token_cookie(response, token)
+    return {"message": f"已切换为 {role_name}", "user": UserOut.from_orm(user)}

@@ -26,6 +26,3 @@ settings = Settings()
 
 if not settings.SECRET_KEY or len(settings.SECRET_KEY) < 32:
     raise ValueError("❌ 必须在 .env 中设置长度 ≥32 的 SECRET_KEY")
-
-# 跨域允许的来源（逗号分隔）
-CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
