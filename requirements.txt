@@ -15,4 +15,5 @@ python-docx
 openpyxl
 python-pptx
 PyMuPDF
-Pillow
+Pillowredis
+aioredis

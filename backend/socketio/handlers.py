@@ -7,12 +7,16 @@ from backend.models.chat import ChatMessage, Notification
 from backend.models.user import User
 from sqlalchemy import select, func, delete
 
-# ✅ 修复 WebSocket CORS 通配符
 allow_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
-sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=allow_origins)
+redis_url = os.getenv("REDIS_URL", "")
+if redis_url:
+    mgr = socketio.AsyncRedisManager(redis_url)
+    sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=allow_origins, client_manager=mgr)
+else:
+    sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=allow_origins)
+
 connected_users = {}
 
-# ... 其余事件代码保持不变（与之前增强版相同）
 @sio.event
 async def connect(sid, environ):
     token = environ.get("HTTP_AUTHORIZATION", "").replace("Bearer ", "")
@@ -43,7 +47,6 @@ async def send_message(sid, data):
         return
     content = bleach.clean(content, tags=[], strip=True)
     async with AsyncSessionLocal() as db:
-        # 使用事务确保一致性
         async with db.begin():
             msg = ChatMessage(user_id=user_id, content=content)
             db.add(msg)
@@ -52,7 +55,6 @@ async def send_message(sid, data):
                 over = total - settings.CHAT_MAX_MESSAGES
                 subq = select(ChatMessage.id).order_by(ChatMessage.created_at.asc()).limit(over)
                 await db.execute(delete(ChatMessage).where(ChatMessage.id.in_(subq)))
-            # 处理 @提及
             mentions = re.findall(r'@(\w+)', content)
             for m_username in set(mentions):
                 m_user = await db.execute(select(User).where(User.username == m_username))
@@ -65,7 +67,6 @@ async def send_message(sid, data):
                         content=f"{(await db.get(User, user_id)).username} 在聊天中@了你"
                     )
                     db.add(notif)
-        # 提交事务后广播
         user = await db.get(User, user_id)
         username = user.username if user else "未知"
         payload = {

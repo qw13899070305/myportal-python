@@ -1,11 +1,16 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from argon2 import PasswordHasher
 from backend.core.database import Base
 import datetime
 
-# ✅ 显式设置 argon2 参数
-ph = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4)
+ph = PasswordHasher(time_cost=4, memory_cost=131072, parallelism=4)
+
+user_roles = Table(
+    'user_roles', Base.metadata,
+    Column('user_id', Integer, ForeignKey('users.id'), primary_key=True),
+    Column('role_id', Integer, ForeignKey('roles.id'), primary_key=True)
+)
 
 class User(Base):
     __tablename__ = "users"
@@ -16,8 +21,7 @@ class User(Base):
     avatar = Column(String(255))
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
-
-    roles = relationship("Role", secondary="user_roles", back_populates="users")
+    roles = relationship("Role", secondary=user_roles, back_populates="users")
 
     def set_password(self, password: str):
         self.hashed_password = ph.hash(password)
@@ -25,8 +29,14 @@ class User(Base):
     def verify_password(self, password: str) -> bool:
         try:
             return ph.verify(self.hashed_password, password)
-        except:
+        except Exception:
             return False
 
     def has_role(self, role_name: str) -> bool:
         return any(role.name == role_name for role in self.roles)
+
+class Role(Base):
+    __tablename__ = "roles"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(50), unique=True, nullable=False)
+    users = relationship("User", secondary=user_roles, back_populates="roles")
