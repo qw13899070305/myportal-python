@@ -11,13 +11,6 @@ from backend.socketio import socket_app
 
 rate_limiter = RateLimiter(requests=120, window=60)
 
-#                 r = await db.execute(select(Role).where(Role.name == rname))
-                role = r.scalar_one_or_none()
-                if not role:
-                    role = Role(name=rname); db.add(role)
-                admin.roles.append(role)
-            db.add(admin)
-            await db.commit()
         for key, val in [("site_name","myportal-python"), ("announcement","欢迎使用")]:
             existing = await db.execute(select(SiteConfig).where(SiteConfig.key == key))
             if not existing.scalar_one_or_none():
@@ -29,6 +22,13 @@ rate_limiter = RateLimiter(requests=120, window=60)
 def create_app():
     app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION, lifespan=lifespan, docs_url="/docs" if settings.DEBUG else None)
     allow_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(","),
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allow_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allow_origins,
