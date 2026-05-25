@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     PROJECT_NAME: str = "myportal-python"
     VERSION: str = "0.1.0"
-    DEBUG: bool = True
+    DEBUG: bool = False
 
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")
     JWT_ALGORITHM: str = "HS256"

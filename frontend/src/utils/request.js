@@ -26,3 +26,15 @@ service.interceptors.response.use(
 )
 
 export default service
+
+// 获取 CSRF Token 并附加到请求头
+export async function getCsrfToken() {
+  const res = await axios.get('/auth/csrf-token')
+  return res.data.csrf_token
+}
+
+// 获取 CSRF Token 并附加到请求头
+export async function getCsrfToken() {
+  const res = await axios.get('/auth/csrf-token')
+  return res.data.csrf_token
+}
