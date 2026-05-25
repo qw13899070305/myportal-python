@@ -11,18 +11,6 @@ from backend.socketio import socket_app
 
 rate_limiter = RateLimiter(requests=120, window=60)
 
-async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    from backend.models.user import User, Role
-    from backend.models.config import SiteConfig
-    from sqlalchemy import select
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(User).where(User.username == "admin"))
-        if not result.scalar_one_or_none():
-#             admin = User(username="admin")
-#             admin.set_password("admin123")
-#             for rname in ["reader","author","moderator","admin","super_admin","chat_user"]:
 #                 r = await db.execute(select(Role).where(Role.name == rname))
                 role = r.scalar_one_or_none()
                 if not role:
@@ -41,6 +29,20 @@ async def lifespan(app: FastAPI):
 def create_app():
     app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION, lifespan=lifespan, docs_url="/docs" if settings.DEBUG else None)
     allow_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(","),
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allow_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allow_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.add_middleware(SecurityMiddleware)
 
     @app.middleware("http")

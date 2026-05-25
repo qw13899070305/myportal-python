@@ -1,9 +1,7 @@
 import re
+from datetime import datetime, timedelta
 import jwt
-from core.config import SECRET_KEY, JWT_ALGORITHM
 import socketio
-import jwt
-from core.config import SECRET_KEY, JWT_ALGORITHM
 from backend.core.config import settings
 from backend.core.database import AsyncSessionLocal
 from backend.models.chat import ChatMessage, Notification
@@ -15,22 +13,20 @@ connected_users = {}
 
 @sio.event
 async def connect(sid, environ):
-        token = environ.get("HTTP_AUTHORIZATION", "").replace("Bearer ", "")
-        if not token:
-            raise ConnectionRefusedError("authentication failed")
-        try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[JWT_ALGORITHM])
-            user_id = payload["sub"]
-            # 将 user_id 与 sid 绑定到 session
-            sio.save_session(sid, {"user_id": user_id})
-        except jwt.PyJWTError:
-            raise ConnectionRefusedError("invalid token")
-    pass
+    token = environ.get("HTTP_AUTHORIZATION", "").replace("Bearer ", "")
+    if not token:
+        raise ConnectionRefusedError("authentication failed")
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        user_id = payload["sub"]
+        await sio.save_session(sid, {"user_id": user_id})
+    except jwt.PyJWTError:
+        raise ConnectionRefusedError("invalid token")
 
 @sio.event
 async def join(sid, data):
-        session = await sio.get_session(sid)
-        user_id = session.get("user_id") if session else None
+    session = await sio.get_session(sid)
+    user_id = session.get("user_id") if session else None
     if user_id:
         connected_users[sid] = user_id
         await sio.emit("user_joined", {"user_id": user_id}, skip_sid=sid)
@@ -43,19 +39,15 @@ async def send_message(sid, data):
     content = data.get("content", "").strip()
     if not content:
         return
-
     async with AsyncSessionLocal() as db:
         msg = ChatMessage(user_id=user_id, content=content)
         db.add(msg)
-        # 保留最近200条
         total = await db.scalar(select(func.count(ChatMessage.id)))
         if total > settings.CHAT_MAX_MESSAGES:
             over = total - settings.CHAT_MAX_MESSAGES
             subq = select(ChatMessage.id).order_by(ChatMessage.created_at.asc()).limit(over)
             await db.execute(delete(ChatMessage).where(ChatMessage.id.in_(subq)))
         await db.commit()
-
-        # @提及通知
         mentions = re.findall(r'@(\w+)', content)
         for m_username in set(mentions):
             m_user = await db.execute(select(User).where(User.username == m_username))
@@ -69,7 +61,6 @@ async def send_message(sid, data):
                 )
                 db.add(notif)
         await db.commit()
-
         user = await db.get(User, user_id)
         username = user.username if user else "未知"
         payload = {
@@ -79,8 +70,7 @@ async def send_message(sid, data):
             "content": content,
             "time": str(msg.created_at)
         }
-    # 广播给所有人
-    await sio.emit("chat_message", payload)
+        await sio.emit("chat_message", payload)
 
 @sio.event
 async def revoke_message(sid, data):

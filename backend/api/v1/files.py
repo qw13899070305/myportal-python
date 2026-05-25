@@ -45,7 +45,7 @@ def range_stream(file_path: Path, start: int, end: int, chunk_size: int = 8192):
 @router.post("/upload")
 async def upload(file: UploadFile = File(..., max_size=100*1024*1024), user=Depends(RoleChecker(["author","admin","super_admin"])), db: AsyncSession = Depends(get_db)):
     validate_file_type(file.filename, file.file)
-    safe_name = sanitize_filename(file.filename)
+    safe_name = f"{uuid.uuid4().hex}{os.path.splitext(sanitize_filename(file.filename))[1]}"
     file_path = UPLOAD_DIR / safe_name
     content = await file.read()
     file_path.write_bytes(content)

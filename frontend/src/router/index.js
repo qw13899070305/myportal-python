@@ -36,7 +36,7 @@ const routes = [
 
 const router = createRouter({ history: createWebHistory(), routes })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const auth = useAuthStore()
   if (to.path === '/register' || to.path === '/login') {
     // 注册和登录页无需权限
@@ -44,7 +44,7 @@ router.beforeEach((to, from, next) => {
     return
   }
   if (auth.token && (!auth.user || !auth.user.roles)) {
-    auth.logout()
+    try { await auth.fetchUser(); next(); return; } catch { try { await auth.fetchUser(); next(); return; } catch { auth.logout() } }
   }
   if (to.path !== '/login' && !auth.token) {
     next('/login')
