@@ -11,11 +11,6 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('token', t)
     localStorage.setItem('user', JSON.stringify(u))
   }
-  function logout() {
-    token.value = ''
-    user.value = null
-    localStorage.clear()
-  }
   async function fetchUser() {
     const res = await fetch("/api/v1/auth/me", {
       headers: { Authorization: `Bearer ${token.value}` }

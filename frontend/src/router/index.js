@@ -25,10 +25,6 @@ const routes = [
           { path: 'dashboard', component: () => import('../pages/admin/Dashboard.vue') },
           { path: 'articles', component: () => import('../pages/admin/ArticlesManage.vue') },
           { path: 'users', component: () => import('../pages/admin/UsersManage.vue') },
-          { path: 'files', component: () => import('../pages/admin/FilesManage.vue') },
-          { path: 'chat', component: () => import('../pages/admin/ChatManage.vue') },
-          { path: 'config', component: () => import('../pages/admin/SiteConfig.vue') }
-        ]
       }
     ]
   }
@@ -37,6 +33,20 @@ const routes = [
 const router = createRouter({ history: createWebHistory(), routes })
 
 router.beforeEach(async (to, from, next) => {
+  const auth = useAuthStore()
+  if (to.path === "/register" || to.path === "/login") { next(); return; }
+  if (auth.token && (!auth.user || !auth.user.roles)) {
+    try {
+      await auth.fetchUser();
+      next();
+      return;
+    } catch {
+      auth.logout();
+    }
+  }
+  if (!auth.token) { next("/login"); }
+  else if (to.meta.requiresAdmin && !auth.isAdmin()) { next("/"); }
+  else { next(); }
   const auth = useAuthStore()
   if (to.path === '/register' || to.path === '/login') {
     // 注册和登录页无需权限

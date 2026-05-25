@@ -22,4 +22,7 @@ class Settings(BaseSettings):
     CHAT_RECALL_WINDOW_MINUTES: int = 5
     SHARE_LINK_EXPIRE_HOURS: int = 24
     CSP_POLICY: str = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; font-src 'self' https://cdnjs.cloudflare.com; img-src 'self' data:; media-src 'self'; frame-src 'self' https://view.officeapps.live.com; connect-src 'self' ws: wss:"
+if not settings.SECRET_KEY:
+    raise RuntimeError("SECRET_KEY environment variable is required")
+
 settings = Settings()

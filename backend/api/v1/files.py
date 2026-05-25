@@ -61,6 +61,9 @@ async def download(filename: str, _=Depends(RoleChecker(["admin","super_admin"])
     return FileResponse(fp, filename=filename)
 
 @router.get("/avatar/{filename}")
+    safe_name = os.path.basename(filename)
+    if safe_name != filename:
+        raise HTTPException(400, "非法文件名")
 async def get_avatar(filename: str):
     fp = UPLOAD_DIR / "avatars" / filename
     if not fp.exists(): raise HTTPException(404)

@@ -16,10 +16,6 @@ rate_limiter = RateLimiter(requests=120, window=60)
             if not existing.scalar_one_or_none():
                 db.add(SiteConfig(key=key, value=val))
         await db.commit()
-    yield
-    await engine.dispose()
-
-def create_app():
     app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION, lifespan=lifespan, docs_url="/docs" if settings.DEBUG else None)
     allow_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(","),
     app.add_middleware(
