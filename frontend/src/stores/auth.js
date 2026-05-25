@@ -18,6 +18,7 @@ export const useAuthStore = defineStore('auth', () => {
         localStorage.clear()
     }
 
+    // ✅ 只保留一个 fetchUser 函数
     async function fetchUser() {
         const res = await fetch("/api/v1/auth/me", {
             headers: { Authorization: `Bearer ${token.value}` }

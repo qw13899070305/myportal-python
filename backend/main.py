@@ -33,7 +33,7 @@ def create_app():
         docs_url="/docs" if settings.DEBUG else None
     )
 
-    # 修复：只保留一个 CORS 中间件
+    # ✅ 只保留一个 CORS 中间件
     allow_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
     app.add_middleware(
         CORSMiddleware,

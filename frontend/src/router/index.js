@@ -40,6 +40,7 @@ router.beforeEach(async (to, from, next) => {
         next(); return;
     }
 
+    // ✅ 只尝试一次恢复会话
     if (auth.token && (!auth.user || !auth.user.roles)) {
         try {
             await auth.fetchUser();
