@@ -20,10 +20,10 @@ async def lifespan(app: FastAPI):
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(User).where(User.username == "admin"))
         if not result.scalar_one_or_none():
-            admin = User(username="admin")
-            admin.set_password("admin123")
-            for rname in ["reader","author","moderator","admin","super_admin","chat_user"]:
-                r = await db.execute(select(Role).where(Role.name == rname))
+#             admin = User(username="admin")
+#             admin.set_password("admin123")
+#             for rname in ["reader","author","moderator","admin","super_admin","chat_user"]:
+#                 r = await db.execute(select(Role).where(Role.name == rname))
                 role = r.scalar_one_or_none()
                 if not role:
                     role = Role(name=rname); db.add(role)
@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
 
 def create_app():
     app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION, lifespan=lifespan, docs_url="/docs" if settings.DEBUG else None)
-    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+    allow_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(","),
     app.add_middleware(SecurityMiddleware)
 
     @app.middleware("http")

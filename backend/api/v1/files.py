@@ -1,4 +1,5 @@
 import os, mimetypes, io, re
+import uuid
 from pathlib import Path
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request
@@ -42,13 +43,10 @@ def range_stream(file_path: Path, start: int, end: int, chunk_size: int = 8192):
             remaining -= len(chunk)
 
 @router.post("/upload")
-async def upload(file: UploadFile = File(...), user=Depends(RoleChecker(["author","admin","super_admin"])), db: AsyncSession = Depends(get_db)):
+async def upload(file: UploadFile = File(..., max_size=100*1024*1024), user=Depends(RoleChecker(["author","admin","super_admin"])), db: AsyncSession = Depends(get_db)):
     validate_file_type(file.filename, file.file)
     safe_name = sanitize_filename(file.filename)
     file_path = UPLOAD_DIR / safe_name
-    if file_path.exists():
-        stem, ext = os.path.splitext(safe_name)
-        file_path = UPLOAD_DIR / f"{stem}_{int(datetime.utcnow().timestamp())}{ext}"
     content = await file.read()
     file_path.write_bytes(content)
     item = FileItem(name=file_path.name, size=len(content), uploader_id=user.id)

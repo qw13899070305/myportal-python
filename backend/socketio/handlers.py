@@ -1,6 +1,10 @@
 import re
+import jwt
+from core.config import SECRET_KEY, JWT_ALGORITHM
 from datetime import datetime, timedelta
 import socketio
+import jwt
+from core.config import SECRET_KEY, JWT_ALGORITHM
 from backend.core.config import settings
 from backend.core.database import AsyncSessionLocal
 from backend.models.chat import ChatMessage, Notification
@@ -12,6 +16,16 @@ connected_users = {}
 
 @sio.event
 async def connect(sid, environ):
+        token = environ.get("HTTP_AUTHORIZATION", "").replace("Bearer ", "")
+        if not token:
+            raise ConnectionRefusedError("authentication failed")
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[JWT_ALGORITHM])
+            user_id = payload["sub"]
+            # 将 user_id 与 sid 绑定到 session
+            sio.save_session(sid, {"user_id": user_id})
+        except jwt.PyJWTError:
+            raise ConnectionRefusedError("invalid token")
     pass
 
 @sio.event
