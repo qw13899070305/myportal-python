@@ -2,6 +2,7 @@ import os, socketio
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from sqlalchemy import select
 from backend.core.config import settings
@@ -33,7 +34,6 @@ def create_app():
         docs_url="/docs" if settings.DEBUG else None
     )
 
-    # ✅ 只保留一个 CORS 中间件
     allow_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
     app.add_middleware(
         CORSMiddleware,
@@ -42,15 +42,19 @@ def create_app():
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
     app.add_middleware(SecurityMiddleware)
 
     @app.middleware("http")
     async def rate_limit_middleware(request: Request, call_next):
-        if not request.url.path.startswith("/api") and not request.url.path.startswith("/ws"):
-            return await call_next(request)
-        rate_limiter(request)
+        if request.url.path.startswith("/api") or request.url.path.startswith("/ws"):
+            rate_limiter(request)
         return await call_next(request)
+
+    # 全局异常处理
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        print(f"❌ 未捕获异常: {exc}")
+        return JSONResponse(status_code=500, content={"detail": "服务器内部错误"})
 
     app.include_router(api_router, prefix="/api/v1")
     app.mount("/ws", socket_app)
@@ -59,3 +63,5 @@ def create_app():
     if os.path.isdir(static_dir):
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
     return app
+
+app = create_app()

@@ -1,19 +1,13 @@
-import os, mimetypes, io, re, uuid
+import os, mimetypes, io, re, uuid, struct
 from pathlib import Path
-from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request
-from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse, Response
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 from backend.core.database import get_db
 from backend.core.auth import get_current_user, RoleChecker
 from backend.core.config import settings
-from backend.core.utils import validate_file_type, sanitize_filename, generate_thumbnail
 from backend.models.file import FileItem
-from backend.services.preview import (
-    get_file_path, preview_word, preview_excel, preview_ppt, preview_pdf_page, get_pdf_page_count
-)
-from PIL import Image, ImageDraw, ImageFont
 
 router = APIRouter(prefix="/files", tags=["文件"])
 UPLOAD_DIR = settings.UPLOAD_DIR
@@ -21,34 +15,49 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 settings.PREVIEW_TEMP_DIR.mkdir(exist_ok=True)
 (UPLOAD_DIR / "avatars").mkdir(exist_ok=True)
 
-def parse_range_header(range_header: str, file_size: int) -> tuple[int, int]:
-    match = re.match(r'bytes=(\d+)-(\d*)', range_header)
-    if not match:
-        raise HTTPException(416, "无效的 Range 请求")
-    start = int(match.group(1))
-    end_str = match.group(2)
-    end = int(end_str) if end_str else file_size - 1
-    if start >= file_size or end >= file_size:
-        raise HTTPException(416, "Range 超出文件范围")
-    return start, end
+MAGIC_SIGS = {
+    b'\x89PNG': 'image/png',
+    b'\xff\xd8\xff': 'image/jpeg',
+    b'GIF8': 'image/gif',
+    b'%PDF': 'application/pdf',
+    b'PK\x03\x04': 'zip/office',
+    b'\xd0\xcf\x11\xe0': 'ole/office',
+}
 
-def range_stream(file_path: Path, start: int, end: int, chunk_size: int = 8192):
-    with open(file_path, "rb") as f:
-        f.seek(start)
-        remaining = end - start + 1
-        while remaining > 0:
-            chunk = f.read(min(chunk_size, remaining))
-            if not chunk:
-                break
-            yield chunk
-            remaining -= len(chunk)
+def check_magic(content: bytes, expected_mime: str = None) -> bool:
+    for magic, mime_hint in MAGIC_SIGS.items():
+        if content.startswith(magic):
+            if expected_mime is None:
+                return True
+            if mime_hint == 'zip/office':
+                return expected_mime in [
+                    'application/zip',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+                ]
+            if mime_hint == 'ole/office':
+                return expected_mime in [
+                    'application/msword',
+                    'application/vnd.ms-excel',
+                    'application/vnd.ms-powerpoint'
+                ]
+            return expected_mime == mime_hint
+    return False
+
+def safe_filename(filename: str) -> str:
+    return uuid.uuid4().hex + os.path.splitext(os.path.basename(filename))[1]
 
 @router.post("/upload")
-async def upload(file: UploadFile = File(..., max_size=100*1024*1024),
+async def upload(file: UploadFile = File(...),
                  user=Depends(RoleChecker(["author","admin","super_admin"])),
                  db: AsyncSession = Depends(get_db)):
-    validate_file_type(file.filename, file.file)
-    safe_name = f"{uuid.uuid4().hex}{os.path.splitext(sanitize_filename(file.filename))[1]}"
+    # 魔数校验
+    head = await file.read(32)
+    await file.seek(0)
+    if not check_magic(head, file.content_type):
+        raise HTTPException(400, "文件内容与类型不符")
+    safe_name = safe_filename(file.filename)
     file_path = UPLOAD_DIR / safe_name
     content = await file.read()
     file_path.write_bytes(content)
@@ -56,6 +65,25 @@ async def upload(file: UploadFile = File(..., max_size=100*1024*1024),
     db.add(item)
     await db.commit()
     return {"id": item.id, "filename": file_path.name}
+
+@router.post("/upload-avatar")
+async def upload_avatar(file: UploadFile = File(...),
+                        user=Depends(get_current_user),
+                        db: AsyncSession = Depends(get_db)):
+    if file.content_type not in ["image/png", "image/jpeg", "image/gif"]:
+        raise HTTPException(400, "仅支持 PNG/JPG/GIF")
+    head = await file.read(32)
+    await file.seek(0)
+    if not check_magic(head, file.content_type):
+        raise HTTPException(400, "文件内容不匹配")
+    safe_name = f"avatar_{user.id}_{uuid.uuid4().hex}{os.path.splitext(file.filename)[1]}"
+    file_path = UPLOAD_DIR / "avatars" / safe_name
+    content = await file.read()
+    file_path.write_bytes(content)
+    user.avatar = safe_name
+    db.add(user)
+    await db.commit()
+    return {"avatar": safe_name, "url": f"/api/v1/files/avatar/{safe_name}"}
 
 @router.get("/download/{filename}")
 async def download(filename: str, _=Depends(RoleChecker(["admin","super_admin"]))):
@@ -69,7 +97,6 @@ async def download(filename: str, _=Depends(RoleChecker(["admin","super_admin"])
 
 @router.get("/avatar/{filename}")
 async def get_avatar(filename: str):
-    # ✅ 修复路径穿越漏洞（代码放在函数内部）
     safe_name = os.path.basename(filename)
     if safe_name != filename:
         raise HTTPException(400, "非法文件名")
@@ -79,14 +106,19 @@ async def get_avatar(filename: str):
     return FileResponse(fp)
 
 @router.get("/preview/{file_id}")
-async def preview_file(file_id: int, request: Request,
+async def preview_file(file_id: int,
                        db: AsyncSession = Depends(get_db),
                        user=Depends(get_current_user)):
     result = await db.execute(select(FileItem).where(FileItem.id == file_id, FileItem.deleted == False))
-    file_item = result.scalar_one_or_none()
-    if not file_item:
-        raise HTTPException(404, "文件不存在或已删除")
-    file_path = UPLOAD_DIR / file_item.name
-    if not file_path.exists():
+    item = result.scalar_one_or_none()
+    if not item:
         raise HTTPException(404, "文件不存在")
-    return FileResponse(file_path)
+    path = UPLOAD_DIR / item.name
+    if not path.exists():
+        raise HTTPException(404, "文件不存在")
+    if path.suffix.lower() == ".pdf":
+        return HTMLResponse(f"""
+        <html><body style="margin:0">
+        <iframe src="/static/pdfjs/web/viewer.html?file=/api/v1/files/download/{path.name}" width="100%" height="100%"></iframe>
+        </body></html>""")
+    return FileResponse(path)
