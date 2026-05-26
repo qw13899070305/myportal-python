@@ -1,101 +1,52 @@
-from fastapi.staticfiles import StaticFiles
-from fastapi import FastAPI, Request, HTTPException as FastAPIHTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
-from slowapi import Limiter
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from slowapi.storage.redis import RedisStorage
-from fastapi_csrf_protect import CsrfProtect
-from fastapi_csrf_protect.exceptions import CsrfProtectError
-import logging
-import sys
-
 from backend.core.config import settings
-from backend.api.v1 import api_router
-from backend.core.database import engine, Base
 
-logging.basicConfig(
-    level=logging.INFO if not settings.DEBUG else logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger("myportal")
+# 创建应用
+app = FastAPI(title=settings.APP_NAME, debug=settings.DEBUG)
 
-# 速率限制器：生产环境强制使用 Redis
-if settings.DEBUG:
-    limiter = Limiter(key_func=get_remote_address)
-    logger.info("开发模式：使用内存限流")
-else:
-    try:
-        redis_storage = RedisStorage(settings.REDIS_URL)
-        limiter = Limiter(key_func=get_remote_address, storage=redis_storage)
-        logger.info("生产模式：使用 Redis 限流")
-    except Exception as e:
-        logger.critical(f"生产环境无法连接 Redis 限流存储: {e}")
-        sys.exit(1)
-
-app = FastAPI(title="MyPortal", docs_url="/docs" if settings.DEBUG else None, redoc_url=None)
+# 限流器
+limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, lambda req, exc: JSONResponse(status_code=429, content={"detail": "请求过于频繁"}))
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS
-app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+# CORS 配置
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@CsrfProtect.load_config
-def get_csrf_config():
-    return [("fastapi_csrf_protect", settings.SECRET_KEY)]
+# 注册路由
+from backend.api.v1.auth import router as auth_router
+from backend.api.v1.articles import router as articles_router
+from backend.api.v1.chat import router as chat_router
+from backend.api.v1.files import router as files_router
+from backend.api.v1.admin import router as admin_router
 
-# 安全头常量定义
-SECURITY_HEADERS = {
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
-    "X-XSS-Protection": "1; mode=block",
-    "Referrer-Policy": "strict-origin-when-cross-origin",
-    "Content-Security-Policy": (
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: blob:; font-src 'self'; connect-src 'self' ws: wss:"
-    ),
-}
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["认证"])
+app.include_router(articles_router, prefix="/api/v1/articles", tags=["文章"])
+app.include_router(chat_router, prefix="/api/v1/chat", tags=["聊天"])
+app.include_router(files_router, prefix="/api/v1/files", tags=["文件"])
+app.include_router(admin_router, prefix="/api/v1/admin", tags=["管理"])
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        for header, value in SECURITY_HEADERS.items():
-            response.headers[header] = value
-        if not settings.DEBUG:
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        return response
+# 挂载静态文件（前端构建产物）
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+else:
+    @app.get("/")
+    async def root():
+        return {"message": f"{settings.APP_NAME} 后端服务运行中，前端未构建或未挂载"}
 
-app.add_middleware(SecurityHeadersMiddleware)
-
-# 异常处理：先处理具体异常，最后兜底时放过系统信号
-@app.exception_handler(FastAPIHTTPException)
-async def http_exception_handler(request: Request, exc: FastAPIHTTPException):
-    logger.warning(f"HTTP {exc.status_code}: {request.method} {request.url.path} - {exc.detail}")
-    return JSONResponse(status_code=exc.status_code, content={"detail": str(exc.detail)})
-
-@app.exception_handler(CsrfProtectError)
-async def csrf_exception_handler(request: Request, exc: CsrfProtectError):
-    return JSONResponse(status_code=403, content={"detail": "CSRF 验证失败"})
-
-@app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
-    if isinstance(exc, (SystemExit, KeyboardInterrupt)):
-        raise  # 允许程序正常退出
-    logger.error(f"未处理异常: {request.method} {request.url.path}", exc_info=True)
-    return JSONResponse(status_code=500, content={"detail": "服务器内部错误"})
-
-# 路由
-app.include_router(api_router, prefix="/api/v1")
-    app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
-
-@app.on_event("startup")
-async def startup():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-@app.on_event("shutdown")
-async def shutdown():
-    await engine.dispose()
+# 健康检查
+@app.get("/health")
+async def health():
+    return {"status": "ok"}

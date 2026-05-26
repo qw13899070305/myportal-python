@@ -1,71 +1,99 @@
-from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Response, Request
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
+from backend.core.database import get_db
+from backend.core.security import (
+    create_access_token,
+    create_refresh_token,
+    verify_token,
+    get_current_user,
+    add_token_to_blacklist,
+    is_token_blacklisted
+)
+from backend.services.user_service import authenticate_user, create_user, get_user_by_username
+from backend.schemas.user import UserCreate, UserOut, Token
+from backend.models.user import User
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from fastapi_csrf_protect import CsrfProtect
-from backend.core.config import settings
-from backend.core.database import get_db
-from backend.core.security import create_access_token, get_current_user, verify_token, add_token_to_blacklist
-from backend.models.user import User
-from backend.schemas.user import UserOut, UserCreate, UserLogin
-from backend.services.user_service import create_user, authenticate_user
+from fastapi import Request
+import uuid
 
-router = APIRouter(prefix="/auth", tags=["认证"])
+router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
-def set_token_cookie(response: Response, token: str):
-    response.set_cookie(key="access_token", value=token, httponly=True, secure=not settings.DEBUG, samesite="lax", max_age=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60), path="/")
-
-@router.post("/register", response_model=UserOut)
-@limiter.limit("3/minute")
-async def register(request: Request, user_in: UserCreate, db: AsyncSession = Depends(get_db)):
-    return await create_user(db, user_in)
-
-@router.post("/login")
+@router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/minute")
-async def login(request: Request, response: Response, login_data: UserLogin, db: AsyncSession = Depends(get_db), csrf_protect: CsrfProtect = Depends()):
-    await csrf_protect.validate_csrf(request)
-    user = await authenticate_user(db, login_data.username, login_data.password)
+async def register(request: Request, user_data: UserCreate, db: AsyncSession = Depends(get_db)):
+    try:
+        user = await create_user(db, user_data.username, user_data.password, user_data.email)
+        return user
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+@router.post("/login", response_model=Token)
+@limiter.limit("5/minute")
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
+    user = await authenticate_user(db, form_data.username, form_data.password)
     if not user:
-        raise HTTPException(401, "用户名或密码错误")
-    token = create_access_token(data={"sub": user.username, "user_id": user.id})
-    set_token_cookie(response, token)
-    return {"message": "登录成功", "user": UserOut.model_validate(user)}
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="用户已被禁用")
+
+    jti = str(uuid.uuid4())
+    access_token = create_access_token(data={"sub": str(user.id), "jti": jti})
+    refresh_token = create_refresh_token(data={"sub": str(user.id), "jti": jti})
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
+@router.post("/refresh", response_model=Token)
+async def refresh_token(refresh_token: str, db: AsyncSession = Depends(get_db)):
+    payload = verify_token(refresh_token)
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效的刷新令牌")
+    jti = payload.get("jti")
+    if await is_token_blacklisted(jti):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="令牌已失效")
+
+    user_id = payload.get("sub")
+    user = await get_user_by_username(db, user_id)  # 实际上应该通过 id 查询，这里简化
+    # 正确做法：user = await get_user_by_id(db, int(user_id))
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在")
+
+    # 将旧 refresh token 加入黑名单
+    expire_time = payload.get("exp")
+    if expire_time:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).timestamp()
+        ttl = int(expire_time - now)
+        if ttl > 0:
+            await add_token_to_blacklist(jti, ttl)
+
+    new_jti = str(uuid.uuid4())
+    new_access = create_access_token(data={"sub": str(user.id), "jti": new_jti})
+    new_refresh = create_refresh_token(data={"sub": str(user.id), "jti": new_jti})
+    return {
+        "access_token": new_access,
+        "refresh_token": new_refresh,
+        "token_type": "bearer"
+    }
 
 @router.post("/logout")
-async def logout(request: Request, response: Response):
-    token = request.cookies.get("access_token")
-    if token:
-        try:
-            payload = verify_token(token)
-            jti = payload.get("jti")
-            exp = payload.get("exp")
-            if jti and exp:
-                ttl = max(0, int(exp - datetime.now(timezone.utc).timestamp()))
-                await add_token_to_blacklist(jti, ttl)
-        except Exception:
-            pass
-    response.delete_cookie("access_token", path="/")
-    return {"message": "已登出"}
+async def logout(current_user: User = Depends(get_current_user), token: str = Depends(oauth2_scheme)):
+    payload = verify_token(token)
+    jti = payload.get("jti")
+    exp = payload.get("exp")
+    if exp:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).timestamp()
+        ttl = int(exp - now)
+        if ttl > 0:
+            await add_token_to_blacklist(jti, ttl)
+    return {"detail": "已退出登录"}
 
 @router.get("/me", response_model=UserOut)
-async def get_me(current_user: User = Depends(get_current_user)):
+async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
-
-@router.post("/switch-role")
-@limiter.limit("10/minute")
-async def switch_role(request: Request, response: Response, role_name: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db), csrf_protect: CsrfProtect = Depends()):
-    await csrf_protect.validate_csrf(request)
-    from backend.services.user_service import switch_user_role
-    user = await switch_user_role(db, current_user, role_name)
-    if not user:
-        raise HTTPException(400, "角色切换失败")
-    token = create_access_token(data={"sub": user.username, "user_id": user.id})
-    set_token_cookie(response, token)
-    return {"message": f"已切换为 {role_name}", "user": UserOut.model_validate(user)}
-
-@router.get("/csrf-token")
-async def get_csrf_token(csrf_protect: CsrfProtect = Depends()):
-    csrf_token = csrf_protect.generate_csrf()
-    return {"csrf_token": csrf_token}

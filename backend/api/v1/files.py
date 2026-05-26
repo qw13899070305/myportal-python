@@ -1,124 +1,74 @@
-import os, uuid, mimetypes
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse, HTMLResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from backend.core.database import get_db
-from backend.core.auth import get_current_user, RoleChecker
 from backend.core.config import settings
-from backend.core.utils import sanitize_filename
-from backend.models.file import FileItem
+from backend.core.security import get_current_user
+from backend.models.user import User
+import aiofiles
+import uuid
 
-router = APIRouter(prefix="/files", tags=["文件"])
-UPLOAD_DIR = settings.UPLOAD_DIR
-UPLOAD_DIR.mkdir(exist_ok=True)
-settings.PREVIEW_TEMP_DIR.mkdir(exist_ok=True)
-(UPLOAD_DIR / "avatars").mkdir(exist_ok=True)
+router = APIRouter()
 
-MAGIC_SIGS = {
-    b'\x89PNG': 'image/png',
-    b'\xff\xd8\xff': 'image/jpeg',
-    b'GIF8': 'image/gif',
-    b'%PDF': 'application/pdf',
-    b'PK\x03\x04': 'zip/office',
-    b'\xd0\xcf\x11\xe0': 'ole/office',
-}
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "pdf", "doc", "docx", "xls", "xlsx", "txt", "mp4", "avi"}
 
-def check_magic(content: bytes, expected_mime: str = None) -> bool:
-    for magic, mime_hint in MAGIC_SIGS.items():
-        if content.startswith(magic):
-            if expected_mime is None:
-                return True
-            if mime_hint == 'zip/office':
-                return expected_mime in [
-                    'application/zip',
-                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                    'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-                ]
-            if mime_hint == 'ole/office':
-                return expected_mime in [
-                    'application/msword',
-                    'application/vnd.ms-excel',
-                    'application/vnd.ms-powerpoint'
-                ]
-            return expected_mime == mime_hint
+async def validate_file_type(file: UploadFile):
+    # 读取文件头检测真实类型（简化版，实际应使用 filetype 库）
+    content = await file.read(2048)
+    await file.seek(0)
+    # 简单检查常见文件头
+    if content.startswith(b'\x89PNG'):
+        return True
+    if content.startswith(b'\xff\xd8\xff'):
+        return True
+    if content.startswith(b'GIF8'):
+        return True
+    if content.startswith(b'%PDF'):
+        return True
+    # 对于其他类型，回退到扩展名检查
+    ext = Path(file.filename).suffix.lower().lstrip(".")
+    if ext in ALLOWED_EXTENSIONS:
+        return True
     return False
 
-def safe_filename(filename: str) -> str:
-    return uuid.uuid4().hex + os.path.splitext(os.path.basename(filename))[1]
-
 @router.post("/upload")
-async def upload(file: UploadFile = File(..., max_size=50*1024*1024),  # ✅ 限制文件大小50MB
-                 user=Depends(RoleChecker(["author","admin","super_admin"])),
-                 db: AsyncSession = Depends(get_db)):
-    head = await file.read(32)
-    await file.seek(0)
-    if not check_magic(head, file.content_type):
-        raise HTTPException(400, "文件内容与类型不符")
-    safe_name = safe_filename(file.filename)
-    file_path = UPLOAD_DIR / safe_name
-    content = await file.read()
-    file_path.write_bytes(content)
-    item = FileItem(name=file_path.name, size=len(content), uploader_id=user.id)
-    db.add(item)
-    await db.commit()
-    return {"id": item.id, "filename": file_path.name}
+async def upload_file(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    if not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件名不能为空")
 
-@router.post("/upload-avatar")
-async def upload_avatar(file: UploadFile = File(..., max_size=2*1024*1024),  # ✅ 限制头像大小2MB
-                        user=Depends(get_current_user),
-                        db: AsyncSession = Depends(get_db)):
-    if file.content_type not in ["image/png", "image/jpeg", "image/gif"]:
-        raise HTTPException(400, "仅支持 PNG/JPG/GIF")
-    head = await file.read(32)
-    await file.seek(0)
-    if not check_magic(head, file.content_type):
-        raise HTTPException(400, "文件内容不匹配")
-    safe_name = f"avatar_{user.id}_{uuid.uuid4().hex}{os.path.splitext(file.filename)[1]}"
-    file_path = UPLOAD_DIR / "avatars" / safe_name
-    content = await file.read()
-    file_path.write_bytes(content)
-    user.avatar = safe_name
-    db.add(user)
-    await db.commit()
-    return {"avatar": safe_name, "url": f"/api/v1/files/avatar/{safe_name}"}
+    # 文件大小限制
+    if file.size and file.size > settings.MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="文件大小超过限制")
 
-@router.get("/download/{filename}")
-async def download(filename: str, _=Depends(RoleChecker(["admin","super_admin"]))):
-    safe_name = os.path.basename(filename)
-    if safe_name != filename:
-        raise HTTPException(400, "非法文件名")
-    fp = UPLOAD_DIR / safe_name
-    if not fp.exists():
-        raise HTTPException(404)
-    return FileResponse(fp, filename=safe_name)
+    # 类型检查
+    if not await validate_file_type(file):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的文件类型")
 
-@router.get("/avatar/{filename}")
-async def get_avatar(filename: str):
-    safe_name = os.path.basename(filename)
-    if safe_name != filename:
-        raise HTTPException(400, "非法文件名")
-    fp = UPLOAD_DIR / "avatars" / safe_name
-    if not fp.exists():
-        raise HTTPException(404)
-    return FileResponse(fp)
+    # 生成安全文件名
+    ext = Path(file.filename).suffix.lower()
+    safe_filename = f"{uuid.uuid4().hex}{ext}"
+    upload_dir = Path(settings.UPLOAD_DIR) / str(current_user.id)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    file_path = upload_dir / safe_filename
 
-@router.get("/preview/{file_id}")
-async def preview_file(file_id: int,
-                       db: AsyncSession = Depends(get_db),
-                       user=Depends(get_current_user)):
-    result = await db.execute(select(FileItem).where(FileItem.id == file_id, FileItem.deleted == False))
-    item = result.scalar_one_or_none()
-    if not item:
-        raise HTTPException(404, "文件不存在")
-    path = UPLOAD_DIR / item.name
-    if not path.exists():
-        raise HTTPException(404, "文件不存在")
-    if path.suffix.lower() == ".pdf":
-        return HTMLResponse(f"""
-        <html><body style="margin:0">
-        <iframe src="/static/pdfjs/web/viewer.html?file=/api/v1/files/download/{path.name}" width="100%" height="100%"></iframe>
-        </body></html>""")
-    return FileResponse(path)
+    # 异步写入文件
+    async with aiofiles.open(file_path, 'wb') as out_file:
+        while chunk := await file.read(8192):
+            await out_file.write(chunk)
+
+    # 返回文件信息
+    return {
+        "filename": safe_filename,
+        "original_name": file.filename,
+        "size": file_path.stat().st_size,
+        "url": f"/api/v1/files/{current_user.id}/{safe_filename}"
+    }
+
+@router.get("/{user_id}/{filename}")
+async def get_file(user_id: int, filename: str):
+    file_path = Path(settings.UPLOAD_DIR) / str(user_id) / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="文件不存在")
+    return FileResponse(file_path)

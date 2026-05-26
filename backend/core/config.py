@@ -1,35 +1,47 @@
 import os
-from pathlib import Path
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "myportal-python"
-    VERSION: str = "0.1.0"
-    DEBUG: bool = False
+    # 应用基础配置
+    APP_NAME: str = "MyPortal"
+    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")
-    JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data.db")
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
-    MEILISEARCH_URL: str = os.getenv("MEILISEARCH_URL", "http://localhost:7700")
+    if not SECRET_KEY or len(SECRET_KEY) < 32:
+        if DEBUG:
+            import secrets
+            SECRET_KEY = secrets.token_urlsafe(32)
+            print("WARNING: 开发模式使用随机生成的 SECRET_KEY，生产环境请务必设置")
+        else:
+            raise ValueError("❌ 必须在 .env 中设置长度 ≥32 的 SECRET_KEY")
+
+    # 数据库
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./myportal.db")
+
+    # Redis（可选）
+    REDIS_URL: str = os.getenv("REDIS_URL", "")
+    REDIS_ENABLED: bool = bool(REDIS_URL)
+
+    # MeiliSearch（可选）
+    MEILISEARCH_URL: str = os.getenv("MEILISEARCH_URL", "")
     MEILISEARCH_API_KEY: str = os.getenv("MEILISEARCH_API_KEY", "")
-    UPLOAD_DIR: Path = Path(os.getenv("UPLOAD_DIR", "./uploads"))
-    PREVIEW_TEMP_DIR: Path = Path(os.getenv("PREVIEW_TEMP_DIR", "./preview_temp"))
-    CHAT_MAX_MESSAGES: int = 500
-    CHAT_RECALL_WINDOW_MINUTES: int = 2
+
+    # JWT
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+
+    # 文件上传
+    UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "uploads")
+    MAX_UPLOAD_SIZE: int = int(os.getenv("MAX_UPLOAD_SIZE", "10485760"))  # 10MB
+
+    # CORS
+    CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+
+    # 分页默认值
+    PAGE_SIZE_DEFAULT: int = 20
+
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
 
 settings = Settings()
-if not settings.SECRET_KEY or len(settings.SECRET_KEY) < 32:
-    raise ValueError("❌ 必须在 .env 中设置长度 ≥32 的 SECRET_KEY")
-
-CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
-
-# Argon2 可调参数
-ARGON2_TIME_COST: int = int(os.getenv("ARGON2_TIME_COST", "4"))
-ARGON2_MEMORY_COST: int = int(os.getenv("ARGON2_MEMORY_COST", "131072"))
-ARGON2_PARALLELISM: int = int(os.getenv("ARGON2_PARALLELISM", "4"))
-
-# JWT 算法（生产环境可改为 RS256）
-JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")

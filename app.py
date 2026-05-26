@@ -1,7 +1,6 @@
-import uvicorn
-from backend.main import create_app
-
-app = create_app()
+# 应用入口文件
+from backend.main import app
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="::", port=8000, reload=True)
+    import uvicorn
+    uvicorn.run(app, host="::" port=8000, reload=True)
