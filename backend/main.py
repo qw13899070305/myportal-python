@@ -1,4 +1,6 @@
-from fastapi import FastAPI
+import logging
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -15,7 +17,7 @@ limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS 配置
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -24,18 +26,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 注册路由
-from backend.api.v1.auth import router as auth_router
-from backend.api.v1.articles import router as articles_router
-from backend.api.v1.chat import router as chat_router
-from backend.api.v1.files import router as files_router
-from backend.api.v1.admin import router as admin_router
+# 全局异常处理
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": exc.status_code,
+                "message": exc.detail,
+                "path": request.url.path
+            }
+        }
+    )
 
-app.include_router(auth_router, prefix="/api/v1/auth", tags=["认证"])
-app.include_router(articles_router, prefix="/api/v1/articles", tags=["文章"])
-app.include_router(chat_router, prefix="/api/v1/chat", tags=["聊天"])
-app.include_router(files_router, prefix="/api/v1/files", tags=["文件"])
-app.include_router(admin_router, prefix="/api/v1/admin", tags=["管理"])
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    logger = logging.getLogger(__name__)
+    logger.error(f"未捕获的异常: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "code": 500,
+                "message": "服务器内部错误" if not settings.DEBUG else str(exc),
+                "path": request.url.path
+            }
+        }
+    )
+
+# 注册 API 路由
+from backend.api.v1 import router as v1_router
+app.include_router(v1_router, prefix="/api/v1")
 
 # 挂载静态文件（前端构建产物）
 static_dir = Path(__file__).parent / "static"
@@ -46,7 +68,6 @@ else:
     async def root():
         return {"message": f"{settings.APP_NAME} 后端服务运行中，前端未构建或未挂载"}
 
-# 健康检查
 @app.get("/health")
 async def health():
     return {"status": "ok"}

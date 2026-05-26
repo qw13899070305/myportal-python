@@ -1,14 +1,13 @@
-from backend.api.v1 import search_api
 from fastapi import APIRouter
-from backend.api.v1 import auth, files, chat, categories, admin_cleanup, notifications, health, articles
+from backend.api.v1.auth import router as auth_router
+from backend.api.v1.articles import router as articles_router
+from backend.api.v1.chat import router as chat_router
+from backend.api.v1.files import router as files_router
+from backend.api.v1.admin import router as admin_router
 
-api_router = APIRouter()
-api_router.include_router(auth.router)
-api_router.include_router(files.router)
-api_router.include_router(chat.router)
-api_router.include_router(categories.router)
-api_router.include_router(admin_cleanup.router)
-api_router.include_router(notifications.router)
-api_router.include_router(health.router)
-api_router.include_router(articles.router)
-api_router.include_router(search_api.router)
+router = APIRouter()
+router.include_router(auth_router, prefix="/auth", tags=["认证"])
+router.include_router(articles_router, prefix="/articles", tags=["文章"])
+router.include_router(chat_router, prefix="/chat", tags=["聊天"])
+router.include_router(files_router, prefix="/files", tags=["文件"])
+router.include_router(admin_router, prefix="/admin", tags=["管理"])
