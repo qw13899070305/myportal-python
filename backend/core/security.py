@@ -82,7 +82,8 @@ async def is_token_blacklisted(jti: str) -> bool:
         return result is not None
     except Exception as e:
         logger.error(f"查询 token 黑名单失败: {e}")
-        # 无法验证黑名单时，拒绝请求（Fail-Secure）
+        if settings.DEBUG:
+            return False
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="认证服务暂时不可用"

@@ -1,6 +1,9 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
 import secrets
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -21,7 +24,7 @@ class Settings(BaseSettings):
         if not v or len(v) < 32:
             if info.data.get("DEBUG", False):
                 generated = secrets.token_urlsafe(32)
-                print("WARNING: 开发模式使用随机生成的 SECRET_KEY，生产环境请务必设置")
+                logger.warning("开发模式使用随机生成的 SECRET_KEY，生产环境请务必设置")
                 return generated
             raise ValueError("❌ 必须在 .env 中设置长度 ≥32 的 SECRET_KEY")
         return v
@@ -70,6 +73,7 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
     DB_POOL_RECYCLE: int = 3600
+    DB_POOL_PRE_PING: bool = False
 
 
 settings = Settings()

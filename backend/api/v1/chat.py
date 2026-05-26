@@ -1,4 +1,5 @@
 import json
+import logging
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -9,7 +10,12 @@ from backend.core.config import settings
 from backend.models.user import User
 from backend.models.chat import ChatMessage
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+_ws_connections: dict[str, int] = {}
+_MAX_WS_CONN_PER_IP = 5
 
 
 @router.get("/messages")
@@ -19,14 +25,10 @@ async def get_messages(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # 总数
     total = await db.scalar(select(func.count()).select_from(ChatMessage))
-
-    # 查询消息，按时间倒序
     stmt = select(ChatMessage).order_by(ChatMessage.created_at.desc()).offset((page - 1) * size).limit(size)
     result = await db.execute(stmt)
     messages = result.scalars().all()
-
     items = [
         {
             "id": m.id,
@@ -37,15 +39,19 @@ async def get_messages(
         }
         for m in reversed(messages)
     ]
-
     return {"total": total, "items": items}
 
 
 @router.websocket("/ws")
 async def websocket_chat(websocket: WebSocket):
-    await websocket.accept()
+    client_ip = websocket.client.host if websocket.client else "unknown"
+    if _ws_connections.get(client_ip, 0) >= _MAX_WS_CONN_PER_IP:
+        await websocket.close(code=4003, reason="连接数过多，请稍后再试")
+        return
+
+    _ws_connections[client_ip] = _ws_connections.get(client_ip, 0) + 1
     try:
-        # 等待客户端发送认证消息
+        await websocket.accept()
         data = await websocket.receive_text()
         auth_msg = json.loads(data)
         token = auth_msg.get("token")
@@ -98,4 +104,7 @@ async def websocket_chat(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        await websocket.close(code=4000, reason="服务器错误")
+        logger.exception("WebSocket error")
+        await websocket.close(code=4000, reason="服务器内部错误")
+    finally:
+        _ws_connections[client_ip] = max(0, _ws_connections.get(client_ip, 0) - 1)

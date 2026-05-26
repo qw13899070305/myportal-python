@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func
 from typing import Optional
 from backend.core.database import get_db
 from backend.core.security import get_current_user
@@ -20,9 +20,8 @@ async def list_articles(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user)
 ):
-    # 基础查询
     q = select(Article).order_by(Article.created_at.desc())
-    count_q = select(func.count()).select_from(Article)
+    count_q = select(func.count(Article.id)).select_from(Article)
 
     if tag:
         q = q.where(Article.tags.contains([tag]))
@@ -31,15 +30,11 @@ async def list_articles(
         q = q.where(Article.title.contains(search) | Article.content.contains(search))
         count_q = count_q.where(Article.title.contains(search) | Article.content.contains(search))
 
-    # 总数
     total = await db.scalar(count_q)
-
-    # 分页
     q = q.offset((page - 1) * size).limit(size)
     result = await db.execute(q)
     articles = result.scalars().all()
 
-    # 批量获取当前用户的书签，避免 N+1
     user_bookmarks = set()
     if current_user:
         bm_result = await db.execute(
@@ -52,13 +47,12 @@ async def list_articles(
         items.append({
             "id": a.id,
             "title": a.title,
-            "summary": a.summary,
-            "tags": a.tags,
+            "summary": a.summary if hasattr(a, 'summary') else a.content[:200],
+            "tags": [t.name for t in a.tags] if a.tags else [],
             "author": a.author.username if a.author else "未知",
             "created_at": a.created_at.isoformat(),
             "is_bookmarked": a.id in user_bookmarks
         })
-
     return {"total": total, "items": items}
 
 
@@ -68,7 +62,7 @@ async def create_article(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    article = Article(**article_data.dict(), author_id=current_user.id)
+    article = Article(**article_data.model_dump(), author_id=current_user.id)
     db.add(article)
     await db.commit()
     await db.refresh(article)
