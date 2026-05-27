@@ -1,4 +1,5 @@
 version: '3.8'
+
 services:
   web:
     build: .
@@ -8,5 +9,19 @@ services:
       - .env
     volumes:
       - ./uploads:/app/uploads
-      - ./data.db:/app/data.db
+      - ./data.db:/app/data.db   # 与 config.py 中 DATABASE_URL 保持一致
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped

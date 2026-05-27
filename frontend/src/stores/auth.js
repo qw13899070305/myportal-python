@@ -1,34 +1,41 @@
 import { defineStore } from 'pinia'
 import request from '@/utils/request'
+import router from '@/router'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: null,
-    isAuthenticated: false
+    accessToken: localStorage.getItem('access_token') || null,
+    refreshToken: localStorage.getItem('refresh_token') || null,
   }),
   getters: {
-    isAdmin: (state) => state.user?.roles?.includes('admin') || state.user?.roles?.includes('super_admin')
+    isAuthenticated: (state) => !!state.accessToken && !!state.user,
   },
   actions: {
     async login(username, password) {
-      await request.post('/auth/login', { username, password })
+      const res = await request.post('/auth/login', { username, password })
+      this.accessToken = res.access_token
+      this.refreshToken = res.refresh_token
+      localStorage.setItem('access_token', res.access_token)
+      localStorage.setItem('refresh_token', res.refresh_token)
       await this.fetchUser()
-    try { const csrfRes = await request.get("/auth/csrf-token"); localStorage.setItem("csrf_token", csrfRes.csrf_token); } catch(e) {}
     },
     async fetchUser() {
       try {
-        const res = await request.get('/auth/me')
-        this.user = res.data || res
-        this.isAuthenticated = true
+        const data = await request.get('/auth/me')
+        this.user = data
       } catch {
         this.logout()
-        throw new Error("会话已过期")
+        throw new Error('会话过期')
       }
     },
     logout() {
       this.user = null
-      this.isAuthenticated = false
-      window.location.href = '/login'
-    }
-  }
+      this.accessToken = null
+      this.refreshToken = null
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('refresh_token')
+      router.push('/login')
+    },
+  },
 })

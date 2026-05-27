@@ -1,19 +1,20 @@
-FROM node:18-alpine as builder
-WORKDIR /app
-COPY frontend/package*.json ./
-RUN npm ci
-COPY frontend/ .
-RUN npm run build
-
 FROM python:3.11-slim
+
 WORKDIR /app
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-RUN pip install --upgrade pip
+
+RUN apt-get update && apt-get install -y --no-install-recommends gcc \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY backend/ backend/
-COPY --from=builder /app/dist frontend/dist
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend/ ./backend/
 COPY app.py .
+COPY uploads/ ./uploads/
+
+# 创建非 root 用户
+RUN adduser --disabled-password --gecos '' appuser
+USER appuser
+
 EXPOSE 8000
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

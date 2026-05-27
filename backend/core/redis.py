@@ -1,18 +1,23 @@
 import redis.asyncio as aioredis
 from backend.core.config import settings
 
-_redis = None
+_redis_pool: aioredis.Redis | None = None
 
-async def get_redis():
-    global _redis
-    if _redis is None:
-        _redis = aioredis.from_url(
+async def get_redis() -> aioredis.Redis | None:
+    global _redis_pool
+    if not settings.REDIS_ENABLED or not settings.REDIS_URL:
+        return None
+    if _redis_pool is None:
+        _redis_pool = aioredis.from_url(
             settings.REDIS_URL,
             encoding="utf-8",
             decode_responses=True,
-            max_connections=10,
-            health_check_interval=30,
-            retry_on_timeout=True,
-            socket_keepalive=True,
+            max_connections=settings.DB_POOL_SIZE,
         )
-    return _redis
+    return _redis_pool
+
+async def close_redis():
+    global _redis_pool
+    if _redis_pool:
+        await _redis_pool.close()
+        _redis_pool = None

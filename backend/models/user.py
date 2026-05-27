@@ -1,32 +1,47 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, func
+from sqlalchemy import Column, Integer, String, Boolean, Table, ForeignKey
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from backend.core.database import Base
-from passlib.hash import argon2
-from backend.core.config import settings
 
-ph = argon2.using(
-    time_cost=settings.ARGON2_TIME_COST,
-    memory_cost=settings.ARGON2_MEMORY_COST,
-    parallelism=settings.ARGON2_PARALLELISM,
+user_roles = Table(
+    "user_roles", Base.metadata,
+    Column("user_id", Integer, ForeignKey("users.id")),
+    Column("role_id", Integer, ForeignKey("roles.id")),
 )
 
+class Role(Base):
+    __tablename__ = "roles"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True)
+    users = relationship("User", secondary=user_roles, back_populates="roles")
 
 class User(Base):
     __tablename__ = "users"
-
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, nullable=False, index=True)
-    email = Column(String, unique=True, nullable=True)
+    username = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, index=True)
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
-    is_superuser = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    roles = relationship("Role", secondary=user_roles, back_populates="users")
 
-    roles = relationship("Role", secondary="user_roles", back_populates="users")
+async def get_user_by_id(db: AsyncSession, user_id: int) -> User | None:
+    result = await db.execute(select(User).where(User.id == user_id))
+    return result.scalar_one_or_none()
 
-    def set_password(self, password: str):
-        self.hashed_password = ph.hash(password)
+async def get_user_by_username(db: AsyncSession, username: str) -> User | None:
+    result = await db.execute(select(User).where(User.username == username))
+    return result.scalar_one_or_none()
 
-    def check_password(self, password: str) -> bool:
-        return ph.verify(password, self.hashed_password)
+async def create_user(db: AsyncSession, username: str, email: str, password: str) -> User:
+    from backend.core.security import get_password_hash
+    user = User(
+        username=username,
+        email=email,
+        hashed_password=get_password_hash(password),
+        is_active=True,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user

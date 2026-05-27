@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
-
+from pathlib import Path
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -11,23 +11,30 @@ class Settings(BaseSettings):
 
     APP_NAME: str = "MyPortal"
     DEBUG: bool = False
-    # 强制必须设置，不再自动生成
+
+    # 强制密钥校验，不允许弱默认值
     SECRET_KEY: str = Field(..., min_length=32)
 
     @field_validator("SECRET_KEY", mode="after")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:
+        forbidden = ["", "your-secret-key-here", "changeme", "super-secret-key"]
+        if v.lower().strip() in forbidden:
+            raise ValueError("SECRET_KEY 不能为已知弱密钥")
         if len(v) < 32:
-            raise ValueError("SECRET_KEY 长度必须至少为 32 个字符")
+            raise ValueError("SECRET_KEY 长度至少为 32 字符")
         return v
 
-    DATABASE_URL: str = "sqlite+aiosqlite:///./myportal.db"
+    # 数据库绝对路径，避免多实例混乱，且与 Docker 挂载一致
+    BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
+    DATABASE_URL: str = f"sqlite+aiosqlite:///{BASE_DIR / 'data.db'}"
+
     REDIS_URL: str = ""
     REDIS_ENABLED: bool = False
 
     @field_validator("REDIS_ENABLED", mode="before")
     @classmethod
-    def set_redis_enabled(cls, v, info) -> bool:
+    def auto_enable_redis(cls, v, info):
         return bool(info.data.get("REDIS_URL", ""))
 
     MEILISEARCH_URL: str = ""
@@ -42,17 +49,17 @@ class Settings(BaseSettings):
     ARGON2_PARALLELISM: int = 4
 
     UPLOAD_DIR: str = "uploads"
-    PREVIEW_TEMP_DIR: str = "preview_temp"
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10MB
 
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
-    PAGE_SIZE_DEFAULT: int = 20
-    CHAT_MESSAGE_MAX_LENGTH: int = 500
 
+    CHAT_MESSAGE_MAX_LENGTH: int = 500
+    PAGE_SIZE_DEFAULT: int = 20
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
     DB_POOL_RECYCLE: int = 3600
     DB_POOL_PRE_PING: bool = False
 
+    LOG_LEVEL: str = "DEBUG"
 
 settings = Settings()
