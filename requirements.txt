@@ -1,0 +1,55 @@
+# ============ Web 框架 ============
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+python-multipart>=0.0.18
+slowapi>=0.1.9
+fastapi-csrf-protect>=0.3.8
+
+# ============ 配置与校验 ============
+pydantic>=2.9.0
+pydantic-settings>=2.0.0
+# EmailStr 依赖，缺失会导致应用启动直接失败
+email-validator>=2.2.0
+
+# ============ 数据库 ============
+sqlalchemy[asyncio]>=2.0.0
+aiosqlite>=0.21.0
+
+# ============ 认证与安全 ============
+PyJWT>=2.12.1
+cryptography>=44.0.0
+# 密码哈希实际使用 argon2-cffi（passlib 作为兼容保留）
+argon2-cffi>=23.1.0
+passlib[argon2]>=1.7.4
+# 文档预览的 HTML 清洗（css 额外依赖用于 CSSSanitizer）
+bleach[css]>=6.1.0
+
+# ============ 缓存 / 令牌黑名单（可选）============
+redis>=5.2.0
+# aioredis 已废弃且依赖被移除的 distutils（Python 3.12+ 无法导入）。
+# 项目代码使用 redis.asyncio，这里仅在旧解释器上安装以保持兼容。
+aioredis>=2.0.1; python_version < "3.12"
+
+# ============ 实时通信 ============
+python-socketio>=5.12.0
+
+# ============ 文件与文档预览 ============
+aiofiles>=24.1.0
+PyMuPDF>=1.27.2.2
+mammoth>=1.6.0
+python-docx>=1.1.0
+openpyxl>=3.1.0
+python-pptx>=0.6.23
+# 图形验证码
+Pillow>=10.3.0
+
+# ============ 全文搜索（可选）============
+meilisearch-python-sdk>=0.3.0
+
+# ============ 日志 ============
+loguru>=0.7.0
+
+# ============ 测试 ============
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+httpx>=0.27.0

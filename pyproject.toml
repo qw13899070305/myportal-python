@@ -1,0 +1,34 @@
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "frontend",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    # FastAPI 的标准写法就是 Depends()/Query() 作为参数默认值
+    "B008",
+    # 行长交给格式化工具处理
+    "E501",
+    # 项目统一使用 Optional[X] 风格
+    "UP045",
+    # 允许用 try/except 做可选的兼容降级（例如未安装的可选依赖）
+    "UP041",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# conftest 必须在导入应用之前设置环境变量，import 不在文件顶部
+"backend/tests/conftest.py" = ["E402"]
+# main.py 为了打断循环依赖，个别 import 放在文件中段
+"backend/main.py" = ["E402"]
+"app.py" = ["E402"]

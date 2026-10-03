@@ -1,0 +1,16 @@
+在 Chat.vue <script setup> 中添加：
+import { onMounted, ref } from 'vue'
+import request from '@/utils/request'
+const messages = ref([])
+const page = ref(1)
+const hasMore = ref(true)
+
+async function loadHistory() {
+  if (!hasMore.value) return
+  const data = await request.get('/chat/messages', { params: { page: page.value, page_size: 30 } })
+  if (data.length < 30) hasMore.value = false
+  messages.value = [...data, ...messages.value]
+  page.value++
+}
+onMounted(() => { loadHistory() })
+在消息容器上监听 scroll 触底调用 loadHistory。

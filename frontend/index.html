@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="基于 FastAPI + Vue 3 的全栈信息门户" />
+  <meta name="theme-color" content="#6366f1" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <title>MyPortal</title>
+  <script>
+    // 在首屏渲染前套用主题，避免亮暗切换时闪白
+    (function () {
+      try {
+        var saved = localStorage.getItem('theme')
+        var dark = saved
+          ? saved === 'dark'
+          : window.matchMedia('(prefers-color-scheme: dark)').matches
+        document.documentElement.classList.toggle('dark', dark)
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+      } catch (e) {
+        /* 隐私模式下 localStorage 不可用，忽略即可 */
+      }
+    })()
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

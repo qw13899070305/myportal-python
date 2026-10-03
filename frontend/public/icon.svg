@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="MyPortal">
+  <rect width="512" height="512" rx="112" fill="#6366f1"/>
+  <g fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="round">
+    <path d="M256 108 L404 256 L256 404 L108 256 Z"/>
+    <path d="M256 196 L316 256 L256 316 L196 256 Z" fill="#ffffff" stroke="none"/>
+  </g>
+</svg>
